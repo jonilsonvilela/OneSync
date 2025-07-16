@@ -1,0 +1,45 @@
+# Ambientes Virtuais
+# Ignora a pasta do ambiente virtual para não versionar bibliotecas inteiras.
+venv/
+.venv/
+env/
+
+# Arquivos de Cache do Python
+# Ignora os arquivos de bytecode compilado.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Arquivos de IDE e Editores de Código
+# Ignora configurações específicas do seu ambiente de desenvolvimento.
+.vscode/
+.idea/
+
+# Arquivos de Credenciais e Configurações Sensíveis
+# IMPORTANTE: Nunca versione segredos!
+.env
+*.bat
+
+# Arquivos do Sistema Operacional
+# Ignora arquivos de metadados do macOS e Windows.
+.DS_Store
+Thumbs.db
+
+# Arquivos de Banco de Dados Locais
+# Ignora bancos de dados SQLite que podem ser usados para testes.
+*.sqlite3
+*.db
+
+# Pasta de Uploads
+# Ignora arquivos que os usuários sobem para a aplicação.
+/uploads/
+
+# Arquivos de Instância do Flask
+# Ignora a pasta de instância que pode conter configurações sensíveis.
+/instance/
+
+# Relatórios e Logs de Execução
+# Podemos optar por ignorar os logs gerados para não poluir o repositório.
+# Se você QUISER salvar os logs no Git, remova a linha abaixo.
+/data/logs_execucao/
