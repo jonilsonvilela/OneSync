@@ -1,0 +1,50 @@
+<!-- templates/base.html -->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneSync – JOCA</title>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/alpinejs" defer></script>
+  <style>
+    body {
+      background-color: #f9f9f9;
+      color: #1a1a2e;
+    }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+  <!-- Navbar -->
+  <nav class="bg-[#1a1a2e] text-white shadow-md fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="text-lg font-bold">⚖️ OneSync - JOCA</div>
+      <div class="space-x-6">
+        <a href="{{ url_for('index') }}" class="hover:text-indigo-300">Dashboard</a>
+        <a href="{{ url_for('resultado') }}" class="hover:text-indigo-300">Resultado</a>
+        <a href="{{ url_for('historico') }}" class="hover:text-indigo-300">Histórico</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Conteúdo -->
+  <main class="pt-24 px-4 sm:px-8 max-w-7xl mx-auto">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="mb-4">
+          {% for message in messages %}
+            <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded">
+              <p>{{ message }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>
