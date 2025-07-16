@@ -4,7 +4,7 @@
 
 A ferramenta foi desenvolvida para equipes jurídicas que buscam mais controle, agilidade e rastreabilidade no gerenciamento de grandes volumes de processos, eliminando erros manuais e liberando os profissionais para atividades de maior valor estratégico.
 
-## ✨ Funcionalidades Principais
+## Funcionalidades Principais
 
 * **Interface Web Intuitiva:** Uma interface moderna e responsiva para upload de planilhas e acompanhamento da execução.
 * **Automação com RPA:** Um robô construído com Playwright que realiza o login, busca e preenchimento dos dados no sistema Legal One.
@@ -65,7 +65,7 @@ python app.py
 ```
 A aplicação estará disponível em `http://127.0.0.1:8080`.
 
-## 使い方 (Como Usar)
+## (Como Usar)
 
 1.  Acesse a aplicação pelo navegador.
 2.  Na página **Dashboard**, faça o upload da sua planilha `entrada.xlsx`.
