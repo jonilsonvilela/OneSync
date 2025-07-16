@@ -104,7 +104,7 @@ def salvar_log_execucao(lista_logs: list):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(lista_logs, f, ensure_ascii=False, indent=2)
 
-    print(f"[🧾] Log da execução salvo em: {path}")
+    print(f"[LOG] Log da execução salvo em: {path}")
 
 def login_legalone(page, usuario, senha):
     """LOGIN NO PORTAL LEGAL ONE"""
@@ -203,7 +203,7 @@ def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
     mensagens_erro = []
     campos_preenchidos = 0
 
-    print(" ├─ Preenchendo campos em cascata (UF → Cidade → Justiça → Instância → Classe → Assunto → Comarca/Foro → Número da Vara → Tipo da Vara)...")
+    print(" - Preenchendo campos em cascata (UF -> Cidade -> Justiça -> Instância -> Classe -> Assunto -> Comarca/Foro -> Número da Vara -> Tipo da Vara)...")
 
     ordem = [
         "Estado (UF)",
@@ -221,12 +221,12 @@ def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
         try:
             valor = dados_linha.get(atual)
             if valor is None or str(valor).strip() == "":
-                print(f"    ⚠️ Campo '{atual}' sem valor preenchido na planilha, pulando.")
+                print(f"    [AVISO] Campo '{atual}' sem valor preenchido na planilha, pulando.")
                 continue
 
             campo = next((c for c in mapeamento if c.get("descricao") == atual), None)
             if not campo or not campo.get("id"):
-                print(f"    ⚠️ Campo '{atual}' não encontrado no mapeamento.")
+                print(f"    [AVISO] Campo '{atual}' não encontrado no mapeamento.")
                 continue
 
             # Caso especial: "Número da Vara" é um campo simples
@@ -236,16 +236,16 @@ def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
                     page.wait_for_selector(seletor, timeout=10000)
                     el_input = page.query_selector(seletor)
                     if not el_input or not el_input.is_enabled():
-                        print(f"    ⚠️ Campo '{atual}' não localizado ou desabilitado.")
+                        print(f"    [AVISO] Campo '{atual}' não localizado ou desabilitado.")
                         continue
 
                     el_input.fill(str(valor))
                     el_input.press("Tab")
                     page.wait_for_timeout(300)
-                    print(f"    ✔ Campo '{atual}' preenchido com sucesso.")
+                    print(f"    [SUCESSO] Campo '{atual}' preenchido com sucesso.")
                     campos_preenchidos += 1
                 except Exception as e:
-                    print(f"    ⚠️ Erro ao preencher '{atual}': {e}")
+                    print(f"    [ERRO] Erro ao preencher '{atual}': {e}")
                     mensagens_erro.append(f"{atual}: {e}")
                 continue
 
@@ -268,24 +268,24 @@ def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
                     arg=seletor,
                     timeout=20000
                 )
-                print(f"    ⏳ Campo '{atual}' agora disponível.")
+                print(f"    [INFO] Campo '{atual}' agora disponível.")
                 page.wait_for_timeout(500)
             except:
-                print(f"    ⚠️ Campo '{atual}' não desbloqueou a tempo.")
+                print(f"    [AVISO] Campo '{atual}' não desbloqueou a tempo.")
                 mensagens_erro.append(f"{atual}: timeout de desbloqueio")
                 continue
 
             el_input = page.query_selector(seletor)
             if not el_input:
-                print(f"    ⚠️ Campo '{atual}' não localizado.")
+                print(f"    [AVISO] Campo '{atual}' não localizado.")
                 mensagens_erro.append(f"{atual}: não localizado")
                 continue
             if not el_input.is_enabled():
-                print(f"    ⚠️ Campo '{atual}' está desabilitado.")
+                print(f"    [AVISO] Campo '{atual}' está desabilitado.")
                 mensagens_erro.append(f"{atual}: desabilitado")
                 continue
 
-            print(f"    🖱 Preenchendo campo '{atual}' com valor: '{valor}'")
+            print(f"    [AÇÃO] Preenchendo campo '{atual}' com valor: '{valor}'")
 
             el_input.click()
             el_input.fill(str(valor))
@@ -300,11 +300,11 @@ def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
             el_input.press("Tab")
             page.wait_for_timeout(300)
 
-            print(f"    ✔ {atual} preenchido com sucesso.")
+            print(f"    [SUCESSO] {atual} preenchido com sucesso.")
             campos_preenchidos += 1
 
         except Exception as e:
-            print(f"    ⚠️ Erro ao preencher '{atual}': {e}")
+            print(f"    [ERRO] Erro ao preencher '{atual}': {e}")
             mensagens_erro.append(f"{atual}: {e}")
 
     if campos_preenchidos > 0:
@@ -329,7 +329,7 @@ def preencher_outros_envolvidos(page, dados_linha):
     erros = []
     sucessos = 0
 
-    print(" ├─ Preenchendo Envolvidos...")
+    print(" - Preenchendo Envolvidos...")
 
     situacoes = [s.strip() for s in str(dados_linha.get("Situação do Envolvido", "")).split(";") if s.strip()]
     posicoes  = [s.strip() for s in str(dados_linha.get("Posição Envolvido", "")).split(";") if s.strip()]
@@ -364,7 +364,7 @@ def preencher_outros_envolvidos(page, dados_linha):
                 page.wait_for_timeout(800)
             except Exception as e:
                 msg = f"Erro ao adicionar envolvido {quantidade_existente + i + 1}: {e}"
-                print(f"[⚠️] {msg}")
+                print(f"[AVISO] {msg}")
                 erros.append(msg)
 
         for _ in range(10):
@@ -388,7 +388,7 @@ def preencher_outros_envolvidos(page, dados_linha):
             if i < len(situacoes):
                 try:
                     grupo.locator('select[id*="SituacaoEnvolvidoId"]').select_option(label=situacoes[i])
-                    print(f"  │   ├─ Situação {i+1}: {situacoes[i]}")
+                    print(f"  - Situação {i+1}: {situacoes[i]}")
                 except Exception as e:
                     erros.append(f"Situação {i+1}: {e}")
 
@@ -400,7 +400,7 @@ def preencher_outros_envolvidos(page, dados_linha):
                         page.wait_for_timeout(300)
                         sucesso = preencher_lookup_com_validacao(page, pos_input.first, posicoes[i])
                         if sucesso:
-                            print(f"  │   ├─ Posição {i+1}: {posicoes[i]}")
+                            print(f"  - Posição {i+1}: {posicoes[i]}")
                         else:
                             erros.append(f"Validação falhou para posição {i+1}")
                     else:
@@ -430,14 +430,14 @@ def preencher_outros_envolvidos(page, dados_linha):
                     page.wait_for_timeout(500)
 
                     if page.query_selector("div.empty-box"):
-                        print(f"  ⚠️ Envolvido {i+1} não encontrado. Abrindo modal...")
+                        print(f"  [AVISO] Envolvido {i+1} não encontrado. Abrindo modal...")
                         botao_plus = bloco_lookup.locator('.lookup-button.lookup-new')
                         if botao_plus:
                             botao_plus.click()
                             page.wait_for_selector('form#contatoForm', timeout=10000)
                             sucesso_modal = preencher_modal_adverso(page, nome, tipo, doc)
                             if sucesso_modal:
-                                print(f"  ✅ Envolvido {i+1} cadastrado com sucesso.")
+                                print(f"  [SUCESSO] Envolvido {i+1} cadastrado com sucesso.")
                                 sucessos += 1
                             else:
                                 erros.append(f"Falha ao cadastrar Envolvido {i+1}")
@@ -447,7 +447,7 @@ def preencher_outros_envolvidos(page, dados_linha):
                         input_nome.first.press("Enter")
                         page.wait_for_timeout(300)
                         input_nome.first.press("Tab")
-                        print(f"  │   ├─ Nome {i+1}: {nome}")
+                        print(f"  - Nome {i+1}: {nome}")
                         sucessos += 1
 
                 except Exception as e:
@@ -478,7 +478,7 @@ def preencher_objetos(page, dados_linha):
     erros = []
     sucessos = 0
 
-    print("  ├─ Preenchendo Objetos...")
+    print("  - Preenchendo Objetos...")
     nomes = [s.strip() for s in str(dados_linha.get("Nome do Objeto", "")).split(";") if s.strip()]
     observacoes = [s.strip() for s in str(dados_linha.get("Observações do objeto", "")).split(";") if s.strip()]
 
@@ -509,7 +509,7 @@ def preencher_objetos(page, dados_linha):
                 page.wait_for_timeout(800)
             except Exception as e:
                 msg = f"Erro ao adicionar objeto {quantidade_existente + i + 1}: {e}"
-                print(f"[⚠️] {msg}")
+                print(f"[AVISO] {msg}")
                 erros.append(msg)
 
         for _ in range(10):
@@ -535,11 +535,11 @@ def preencher_objetos(page, dados_linha):
                     input_nome = grupo.locator('input[id*="ObjetoText"]')
                     sucesso = preencher_lookup_com_validacao(page, input_nome, nomes[i])
                     if sucesso:
-                        print(f"  │   ├─ Nome do Objeto {i+1}: {nomes[i]}")
+                        print(f"  - Nome do Objeto {i+1}: {nomes[i]}")
                         sucessos += 1
                     else:
                         msg = f"Validação falhou para Nome do Objeto {i+1}"
-                        print(f"[⚠️] {msg}")
+                        print(f"[AVISO] {msg}")
                         erros.append(msg)
                 except Exception as e:
                     erros.append(f"Erro Nome {i+1}: {e}")
@@ -547,7 +547,7 @@ def preencher_objetos(page, dados_linha):
             if i < len(observacoes):
                 try:
                     grupo.locator('textarea[id*="Observacoes"]').fill(observacoes[i])
-                    print(f"  │   ├─ Observações do Objeto {i+1}")
+                    print(f"  - Observações do Objeto {i+1}")
                 except Exception as e:
                     erros.append(f"Erro Observações {i+1}: {e}")
 
@@ -585,10 +585,10 @@ def preencher_pedidos(page, dados_linha, mapeamento):
             if visiveis >= quantidade_esperada:
                 return True
             page.wait_for_timeout(300)
-        print(f"[⚠️] Só {visiveis} blocos visíveis após {timeout_ms}ms (esperado: {quantidade_esperada})")
+        print(f"[AVISO] Só {visiveis} blocos visíveis após {timeout_ms}ms (esperado: {quantidade_esperada})")
         return False
 
-    print(" ├─ Preenchendo Pedidos...")
+    print(" - Preenchendo Pedidos...")
     campos_pedidos = [
         "Tipo de Pedido", "Contingência", "Data do Pedido", "Data do Julgamento",
         "Probabilidade de Êxito", "Situação do Pedido", "Valor do Pedido",
@@ -608,7 +608,7 @@ def preencher_pedidos(page, dados_linha, mapeamento):
     }
 
     num_pedidos = max(len(v) for v in valores_por_campo.values())
-    print(f"  ├─ Total detectado: {num_pedidos} pedido(s)")
+    print(f"  - Total detectado: {num_pedidos} pedido(s)")
 
     if not page.query_selector("ul.pedidos-list"):
         msg = "Lista de pedidos não localizada."
@@ -633,7 +633,7 @@ def preencher_pedidos(page, dados_linha, mapeamento):
 
     aguardar_blocos_pedidos(page, num_pedidos, timeout_ms=5000)
     pedidos_li = page.locator("ul.pedidos-list > li:visible")
-    print(f"  ├─ {pedidos_li.count()} blocos de pedido visíveis")
+    print(f"  - {pedidos_li.count()} blocos de pedido visíveis")
 
     campos_com_lookup = {
         "Tipo de Pedido", "Contingência", "Situação do Pedido", "Probabilidade de Êxito"
@@ -691,7 +691,7 @@ def preencher_pedidos(page, dados_linha, mapeamento):
                     if campo == "Data do Julgamento":
                         campo_alvo.fill(valor)
                         campo_alvo.press("Tab")
-                        print(f"  🗓️ Data do Julgamento preenchida com: {valor}")
+                        print(f"  [INFO] Data do Julgamento preenchida com: {valor}")
                         continue
 
                     elif "Data" in campo:
@@ -712,7 +712,7 @@ def preencher_pedidos(page, dados_linha, mapeamento):
                     campo_alvo.fill(valor)
 
             pedidos_sucesso += 1
-            print(f"  │   ✔ Pedido {i+1} preenchido com sucesso.")
+            print(f"   - [SUCESSO] Pedido {i+1} preenchido com sucesso.")
 
         except Exception as e:
             erros.append(f"Pedido {i+1} → erro: {e}")
@@ -739,7 +739,7 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
     campos_sucesso = []
     campos_falha = []
 
-    print(" ├─ Preenchendo campos gerais...")
+    print(" - Preenchendo campos gerais...")
 
     campos_ja_tratados = {
         "Processo",
@@ -851,7 +851,7 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
                     el.type(valor_formatado, delay=100)
                     el.press("Tab")
                     page.wait_for_timeout(200)
-                    print(f"  🗓️ Data do Resultado preenchida com: {valor_formatado}")
+                    print(f"  [INFO] Data do Resultado preenchida com: {valor_formatado}")
 
                 elif coluna in campos_data_mascara_rigida:
                     el.click()
@@ -861,7 +861,7 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
                     el.type(valor_formatado, delay=100)
                     el.press("Tab")
                     page.wait_for_timeout(200)
-                    print(f"  🗓️ {coluna} preenchida com: {valor_formatado}")
+                    print(f"  [INFO] {coluna} preenchida com: {valor_formatado}")
 
                 elif "Data" in coluna:
                     el.click()
@@ -870,7 +870,7 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
                     el.type(valor_formatado, delay=100)
                     el.press("Tab")
                     page.wait_for_timeout(200)
-                    print(f"  🗓️ {coluna} preenchida com: {valor_formatado}")
+                    print(f"  [INFO] {coluna} preenchida com: {valor_formatado}")
 
                 else:
                     el.click()
@@ -895,11 +895,11 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
             campos_falha.append((coluna, str(e)))
 
     if campos_sucesso:
-        print(f"  \033[92m✔ Campos gerais preenchidos com sucesso ({len(campos_sucesso)})\033[0m")
+        print(f"  [SUCESSO] Campos gerais preenchidos com sucesso ({len(campos_sucesso)})")
     if campos_falha:
-        print(f"  \033[93m⚠️ {len(campos_falha)} campo(s) com falha no preenchimento:\033[0m")
+        print(f"  [AVISO] {len(campos_falha)} campo(s) com falha no preenchimento:")
         for campo, erro in campos_falha:
-            print(f"    └─ ⚠️ {campo}: {erro}")
+            print(f"    - [AVISO] {campo}: {erro}")
 
     return {
         "etapa": etapa,
@@ -924,12 +924,12 @@ def preencher_adverso_principal(page, dados_linha):
                 "mensagem": "Campo 'Adverso Principal' vazio"
             }
 
-        print(f" ├─ Preenchendo campo 'Contrário principal' com valor: {nome_adverso}")
+        print(f" - Preenchendo campo 'Contrário principal' com valor: {nome_adverso}")
 
         input_adverso = page.query_selector('input[id="Contrario_EnvolvidoText"]')
         if not input_adverso or not input_adverso.is_enabled():
             msg = "Campo 'Contrário principal' não localizado ou desabilitado."
-            print(f"  ⚠️ {msg}")
+            print(f"  [AVISO] {msg}")
             return {
                 "etapa": etapa,
                 "duracao": round(time.time() - inicio, 2),
@@ -947,7 +947,7 @@ def preencher_adverso_principal(page, dados_linha):
 
         sem_resultado = page.query_selector("div.empty-box")
         if sem_resultado:
-            print("  ⚠️ Valor não existe no lookup. Abrindo modal de cadastro...")
+            print("  [AVISO] Valor não existe no lookup. Abrindo modal de cadastro...")
 
             botao_plus = page.query_selector('#Contrario_lookup_envolvido .lookup-button.lookup-new')
             if botao_plus:
@@ -973,7 +973,7 @@ def preencher_adverso_principal(page, dados_linha):
                     }
             else:
                 msg = "Botão de criação (+) não encontrado."
-                print(f"  ❌ {msg}")
+                print(f"  [ERRO] {msg}")
                 return {
                     "etapa": etapa,
                     "duracao": round(time.time() - inicio, 2),
@@ -984,7 +984,7 @@ def preencher_adverso_principal(page, dados_linha):
             input_adverso.press("Enter")
             page.wait_for_timeout(300)
             input_adverso.press("Tab")
-            print("  ✅ Valor encontrado no lookup. Selecionado com sucesso.")
+            print("  [SUCESSO] Valor encontrado no lookup. Selecionado com sucesso.")
             return {
                 "etapa": etapa,
                 "duracao": round(time.time() - inicio, 2),
@@ -1010,10 +1010,10 @@ def preencher_modal_adverso(page, nome_adverso, tipo="Pessoa física", cpf_cnpj=
         page.wait_for_selector('form#contatoForm', timeout=10000)
 
         page.fill('input#Nome', nome_adverso)
-        print(f"  🖊️ Nome preenchido: {nome_adverso}")
+        print(f"  [INFO] Nome preenchido: {nome_adverso}")
 
         page.select_option('select#Tipo', label=tipo)
-        print(f"  🖊️ Tipo selecionado: {tipo}")
+        print(f"  [INFO] Tipo selecionado: {tipo}")
         page.wait_for_timeout(500)
 
         if cpf_cnpj:
@@ -1021,25 +1021,25 @@ def preencher_modal_adverso(page, nome_adverso, tipo="Pessoa física", cpf_cnpj=
                 cpf_input = page.query_selector('input#CPF')
                 if cpf_input and cpf_input.is_enabled():
                     cpf_input.fill(cpf_cnpj)
-                    print(f"  🖊️ CPF preenchido: {cpf_cnpj}")
+                    print(f"  [INFO] CPF preenchido: {cpf_cnpj}")
             elif tipo == "Pessoa jurídica":
                 cnpj_input = page.query_selector('input#CNPJ')
                 if cnpj_input and cnpj_input.is_visible():
                     cnpj_input.fill(cpf_cnpj)
-                    print(f"  🖊️ CNPJ preenchido: {cpf_cnpj}")
+                    print(f"  [INFO] CNPJ preenchido: {cpf_cnpj}")
         else:
-            print("  ⚠️ Nenhum CPF/CNPJ informado — campo deixado em branco.")
+            print("  [AVISO] Nenhum CPF/CNPJ informado — campo deixado em branco.")
 
         page.fill('input#Justificativa', 'rpa')
 
         page.click('input#btnSaveAddContact')
-        print("  💾 Salvando cadastro do adverso...")
+        print("  [INFO] Salvando cadastro do adverso...")
         page.wait_for_timeout(1500)
 
-        return True  # ⬅️ Mantido por compatibilidade com função `preencher_adverso_principal`
+        return True
 
     except Exception as e:
-        print(f"[❌] Erro ao preencher modal do adverso: {e}")
+        print(f"[ERRO] Erro ao preencher modal do adverso: {e}")
         return False
 
 def preencher_lookup_com_validacao(page, el_input, valor):
@@ -1050,18 +1050,18 @@ def preencher_lookup_com_validacao(page, el_input, valor):
 
         tag = el_input.evaluate("el => el.tagName.toLowerCase()")
         if tag == "select":
-            print("  ⚠️ Campo é um <select>, não requer validação de lookup.")
+            print("  [AVISO] Campo é um <select>, não requer validação de lookup.")
             return True
 
         is_enabled = el_input.is_enabled()
         handle = el_input.evaluate_handle("el => el")
         if not handle:
-            print("  ⚠️ ElementHandle não disponível.")
+            print("  [AVISO] ElementHandle não disponível.")
             return False
 
         is_readonly = page.evaluate("el => el.readOnly", handle)
         if not is_enabled or is_readonly:
-            print(f"  ⚠️ Campo desabilitado ou readonly.")
+            print(f"  [AVISO] Campo desabilitado ou readonly.")
             return False
 
         el_input.scroll_into_view_if_needed()
@@ -1080,14 +1080,14 @@ def preencher_lookup_com_validacao(page, el_input, valor):
 
         return True
     except Exception as e:
-        print(f"[⚠️] Erro ao validar lookup: {e}")
+        print(f"[AVISO] Erro ao validar lookup: {e}")
         return False
     
 def preencher_escritorio_responsavel(page, valor_lookup, dicionario):
-    print(f" ├─ Preenchendo Escritório Responsável: {valor_lookup}")
+    print(f" - Preenchendo Escritório Responsável: {valor_lookup}")
     id_valor = dicionario.get(valor_lookup)
     if not id_valor:
-        print(f"  ⚠️ Escritório não encontrado no dicionário: '{valor_lookup}'")
+        print(f"  [AVISO] Escritório não encontrado no dicionário: '{valor_lookup}'")
         return False
 
     try:
@@ -1111,18 +1111,18 @@ def preencher_escritorio_responsavel(page, valor_lookup, dicionario):
             }}
         """)
 
-        print(f"  ✅ Escritório Responsável setado com ID {id_valor}")
+        print(f"  [SUCESSO] Escritório Responsável setado com ID {id_valor}")
         return True
 
     except Exception as e:
-        print(f"  ❌ Erro ao preencher Escritório Responsável: {e}")
+        print(f"  [ERRO] Erro ao preencher Escritório Responsável: {e}")
         return False
 
 def preencher_negociacao_honorario(page, valor_lookup, dicionario):
-    print(f" ├─ Preenchendo Negociação do Contrato de Honorário: {valor_lookup}")
+    print(f" - Preenchendo Negociação do Contrato de Honorário: {valor_lookup}")
     id_valor = dicionario.get(valor_lookup)
     if not id_valor:
-        print(f"  ⚠️ Negociação não encontrada no dicionário: '{valor_lookup}'")
+        print(f"  [AVISO] Negociação não encontrada no dicionário: '{valor_lookup}'")
         return False
 
     try:
@@ -1143,18 +1143,18 @@ def preencher_negociacao_honorario(page, valor_lookup, dicionario):
             }}
         """)
 
-        print(f"  ✅ Negociação setada com ID {id_valor}")
+        print(f"  [SUCESSO] Negociação setada com ID {id_valor}")
         return True
 
     except Exception as e:
-        print(f"  ❌ Erro ao preencher Negociação: {e}")
+        print(f"  [ERRO] Erro ao preencher Negociação: {e}")
         return False
 
 def preencher_centro_custo(page, valor_lookup, dicionario):
-    print(f" ├─ Preenchendo Centro de Custo: {valor_lookup}")
+    print(f" - Preenchendo Centro de Custo: {valor_lookup}")
     id_valor = dicionario.get(valor_lookup)
     if not id_valor:
-        print(f"  ⚠️ Centro de Custo não encontrado no dicionário: '{valor_lookup}'")
+        print(f"  [AVISO] Centro de Custo não encontrado no dicionário: '{valor_lookup}'")
         return False
 
     try:
@@ -1175,21 +1175,50 @@ def preencher_centro_custo(page, valor_lookup, dicionario):
             }}
         """)
 
-        print(f"  ✅ Centro de Custo setado com ID {id_valor}")
+        print(f"  [SUCESSO] Centro de Custo setado com ID {id_valor}")
         return True
 
     except Exception as e:
-        print(f"  ❌ Erro ao preencher Centro de Custo: {e}")
+        print(f"  [ERRO] Erro ao preencher Centro de Custo: {e}")
         return False
+    
+
+def lidar_com_popup_de_confirmacao(page):
+    """
+    Verifica se o popup de confirmação 'Atenção' está visível e clica em 'Sim'.
+    Usa um timeout de 5 segundos para esperar o elemento aparecer.
+    """
+    print(" - Verificando se existe popup de confirmação...")
+    try:
+        # O seletor para o botão 'Sim' é 'input#popup_ok'
+        sim_button = page.locator('input#popup_ok')
+        
+        # Espera ATÉ 5 segundos para o botão ficar visível.
+        # Se aparecer antes, a execução continua imediatamente.
+        sim_button.wait_for(state='visible', timeout=5000)
+        
+        print("   - Popup de 'Atenção' detectado. Clicando em 'Sim'.")
+        sim_button.click()
+        
+        # Aguarda o container do popup desaparecer para garantir que a ação foi processada
+        page.locator('div#popup_container').wait_for(state='hidden', timeout=5000)
+        print("   - Popup de confirmação tratado com sucesso.")
+
+    except TimeoutError:
+        # Se o botão não aparecer dentro do tempo limite, é normal. Apenas informa e continua.
+        print("   - Nenhum popup de confirmação encontrado no tempo de espera.")
+    except Exception as e:
+        # Captura outras exceções inesperadas, mas não interrompe o fluxo.
+        print(f"   - [AVISO] Ocorreu um erro inesperado ao tentar lidar com o popup: {e}")
 
 def main():
     start_time = time.time()
-    print("🟢 INÍCIO DO SCRIPT RPA", flush=True)
+    print("[INÍCIO] INÍCIO DO SCRIPT RPA", flush=True)
 
     usuario = os.environ.get("LEGALONE_USUARIO")
     senha = os.environ.get("LEGALONE_SENHA")
     if not usuario or not senha:
-        print("❌ Variáveis de ambiente não definidas.")
+        print("[ERRO] Variáveis de ambiente não definidas.")
         return
 
     BASE_DIR = Path(__file__).resolve().parent
@@ -1202,7 +1231,7 @@ def main():
             todos_campos = json.load(f)
         mapeamento = todos_campos
     except Exception as e:
-        print(f"[❌] Erro ao carregar dados: {e}")
+        print(f"[ERRO] Erro ao carregar dados: {e}")
         return
 
     logs_processos = []
@@ -1215,7 +1244,8 @@ def main():
         login_info = login_legalone(page, usuario, senha)
         print(f"[{login_info['etapa']}] {login_info['status']} ({login_info['duracao']}s)")
         if login_info["status"] == "Falha":
-            print(f"❌ Erro no login: {login_info.get('mensagem', '')}")
+            print(f"[ERRO] Erro no login: {login_info.get('mensagem', '')}")
+            browser.close()
             return
 
         for i, row in df.iterrows():
@@ -1224,7 +1254,7 @@ def main():
             if not numero:
                 continue
 
-            print(f"\n▶️ Atualizando processo: {numero}")
+            print(f"\n[INFO] Atualizando processo: {numero}")
             log = iniciar_log_processo(numero)
 
             # Acesso
@@ -1291,8 +1321,6 @@ def main():
             campos = atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento)
             adicionar_evento(log, campos["etapa"], campos["status"].lower(), "Atualização", campos.get("messagem", ""), campos["duracao"])
 
-            input("🔎 Valide os campos gerais e pressione Enter para continuar...")
-
             # SALVAR ALTERAÇÕES COM VERIFICAÇÃO DE FALHA
             try:
                 inicio_salvar = time.time()
@@ -1302,33 +1330,39 @@ def main():
                 if botao_salvar and botao_salvar.is_enabled():
                     botao_salvar.scroll_into_view_if_needed()
                     botao_salvar.click()
-                    page.wait_for_timeout(2000)
-
+                    
+                    # *** LÓGICA MOVIDA PARA CÁ: TRATAR O POPUP APÓS O CLIQUE ***
+                    lidar_com_popup_de_confirmacao(page)
+                    
+                    # Pausa para a página processar a ação e atualizar a URL
+                    page.wait_for_timeout(2500)
+                    
                     url_depois = page.url
                     duracao = round(time.time() - inicio_salvar, 2)
 
                     if url_antes == url_depois:
-                        mensagem = "Falha ao salvar — validação obrigatória não atendida"
+                        mensagem = "Falha ao salvar — validação obrigatória ou popup não tratado"
                         adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
-                        print(f"[❌] {mensagem} no processo {numero}")
+                        print(f"[ERRO] {mensagem} no processo {numero}")
                     else:
                         adicionar_evento(log, "Salvar", "sucesso", "Confirmação", "", duracao)
-                        print(f"💾 Processo {numero} salvo com sucesso ({duracao}s)")
+                        print(f"[SALVO] Processo {numero} salvo com sucesso ({duracao}s)")
                 else:
                     adicionar_evento(log, "Salvar", "erro", "Confirmação", "Botão desabilitado ou não encontrado", 0)
-                    print(f"[⚠️] Botão 'Salvar' não disponível para o processo {numero}")
+                    print(f"[AVISO] Botão 'Salvar' não disponível para o processo {numero}")
             except Exception as e:
                 adicionar_evento(log, "Salvar", "erro", "Confirmação", str(e), 0)
                 print(f"[ERRO] Falha ao tentar salvar processo {numero}: {e}")
 
-            print(f"[✔️] Preenchimento concluído para {numero}.")
+            print(f"[SUCESSO] Preenchimento concluído para {numero}.")
             logs_processos.append(log)
 
-        input("\n🧪 Pressione Enter para encerrar o navegador...")
+        print("\n[INFO] Todos os processos da planilha foram concluídos. Encerrando o navegador...")
+        browser.close()
 
     salvar_log_execucao(logs_processos)
     tempo_total = time.time() - start_time
-    print(f"\n⏱️ Tempo total de execução: {tempo_total:.2f} segundos.")
-
+    print(f"\n[TEMPO] Tempo total de execução: {tempo_total:.2f} segundos.")
+    
 if __name__ == "__main__":
     main()

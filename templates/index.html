@@ -1,10 +1,8 @@
-<!-- templates/index.html -->
 {% extends 'base.html' %}
 
 {% block content %}
 <h1 class="text-2xl font-semibold mb-6">📂 Atualização de Processos</h1>
 
-<!-- Formulário de upload com dropzone -->
 <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data"
       class="bg-white p-6 rounded-lg shadow-md space-y-6"
       x-data="{
@@ -48,10 +46,10 @@
   <div class="flex justify-between items-center">
     <button type="submit"
             class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition">
-      Enviar Arquivo
+      📤 Enviar Arquivo
     </button>
 
-    <a href="{{ url_for('executar_stream') }}"
+    <a href="{{ url_for('executar_rpa') }}"
        class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
       ▶️ Executar Atualização
     </a>

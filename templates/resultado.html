@@ -1,10 +1,98 @@
-<!-- templates/resultado.html -->
 {% extends 'base.html' %}
 
 {% block content %}
-<h1 class="text-2xl font-semibold mb-6">📋 Resultado da Última Execução</h1>
+  {% if dashboard_data %}
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">Dashboard da Última Execução</h1>
+        <p class="text-gray-500">Análise do relatório: <span class="font-mono">{{ dashboard_data.nome_arquivo }}</span></p>
+    </div>
 
-<div class="bg-white p-6 rounded-lg shadow-md">
-  <pre class="whitespace-pre-wrap overflow-auto max-h-[70vh] text-sm text-gray-800 font-mono">{{ relatorio }}</pre>
-</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div class="bg-white p-6 rounded-xl shadow-md transition-all hover:shadow-lg hover:scale-105">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Total de Processos</h3>
+        <p class="mt-2 text-4xl font-bold text-indigo-600">{{ dashboard_data.total_processos }}</p>
+        <p class="text-sm text-gray-500 mt-1">processos na planilha</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-md transition-all hover:shadow-lg hover:scale-105">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Sucessos</h3>
+        <p class="mt-2 text-4xl font-bold text-green-600">{{ dashboard_data.sucessos }}</p>
+        <p class="text-sm text-green-500 font-semibold mt-1">{{ "%.2f"|format(dashboard_data.percentual_sucesso) }}% de sucesso</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-md transition-all hover:shadow-lg hover:scale-105">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Falhas</h3>
+        <p class="mt-2 text-4xl font-bold text-red-600">{{ dashboard_data.falhas }}</p>
+        <p class="text-sm text-red-500 font-semibold mt-1">{{ "%.2f"|format(dashboard_data.percentual_falha) }}% de falha</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-md transition-all hover:shadow-lg hover:scale-105">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Tempo Total</h3>
+        <p class="mt-2 text-4xl font-bold text-gray-800">{{ "%.2f"|format(dashboard_data.tempo_total_execucao) }}s</p>
+        <p class="text-sm text-gray-500 mt-1">de execução do robô</p>
+      </div>
+    </div>
+    <div class="mt-8 bg-white p-6 rounded-xl shadow-md">
+      <h3 class="text-lg font-semibold text-gray-700">Análise de Desempenho: Duração por Etapa</h3>
+      <p class="text-sm text-gray-500 mb-4">Tempo total (em segundos) gasto em cada etapa do RPA. Ajuda a identificar gargalos de performance.</p>
+      
+      <div class="relative h-96">
+        <canvas id="graficoDuracao"></canvas>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const ctx = document.getElementById('graficoDuracao').getContext('2d');
+        
+        // Injetamos os dados do backend de forma segura usando o filtro 'tojson'
+        const labels = {{ dashboard_data.grafico_duracao.labels | tojson }};
+        const data = {{ dashboard_data.grafico_duracao.data | tojson }};
+
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Tempo Gasto (s)',
+              data: data,
+              backgroundColor: 'rgba(79, 70, 229, 0.8)', // Cor índigo com transparência
+              borderColor: 'rgba(79, 70, 229, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            indexAxis: 'y', // Transforma em gráfico de barras horizontais
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false // Legenda é desnecessária para um único conjunto de dados
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return ` Duração: ${context.raw.toFixed(2)} segundos`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                beginAtZero: true,
+                title: { display: true, text: 'Tempo (segundos)' }
+              },
+              y: {
+                ticks: { font: { size: 10 } }
+              }
+            }
+          }
+        });
+      });
+    </script>
+    {% else %}
+    <div class="text-center bg-white p-10 rounded-lg shadow-md">
+      <h1 class="text-2xl font-bold text-gray-700">Nenhum Relatório Encontrado</h1>
+      <p class="mt-2 text-gray-500">
+        Parece que o robô ainda não foi executado. Por favor, <a href="{{ url_for('index') }}" class="text-indigo-600 hover:underline">faça o upload de uma planilha e execute</a> o processo para gerar o primeiro dashboard.
+      </p>
+    </div>
+  {% endif %}
 {% endblock %}
