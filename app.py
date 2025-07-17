@@ -10,7 +10,7 @@ import json
 app = Flask(__name__)
 app.secret_key = 'secreta_onesync'
 
-# --- ESTRUTURA DE DIRETÓRIOS ---
+# --- ESTRUTURA DE DIRETÓRIOS TOP---
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_FOLDER = BASE_DIR / 'uploads'
 DATA_DIR = BASE_DIR / 'data'
