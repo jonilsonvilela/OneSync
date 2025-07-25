@@ -128,8 +128,14 @@ def acessar_processo_para_edicao(page, numero_processo):
             raise ValueError("Processo não cadastrado")
 
         page.wait_for_selector("table.webgrid", timeout=30000)
-        page.locator("span.grid-overflow-icon").click()
-        page.locator("a.grid-edit-action-row").click()
+
+        # Garante que o robô sempre clique no ícone da PRIMEIRA linha da tabela de resultados
+        print("   - Focando no primeiro resultado da busca...")
+        page.locator("table.webgrid tbody tr").first.locator("span.grid-overflow-icon").click()
+        
+        # Clica na primeira ação de "Editar" que aparecer
+        page.locator("a.grid-edit-action-row").first.click()
+        
         page.wait_for_selector('button[name="ButtonSave"]', timeout=30000)
 
         return {
