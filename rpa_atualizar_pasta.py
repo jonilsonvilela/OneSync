@@ -1184,7 +1184,6 @@ def preencher_centro_custo(page, valor_lookup, dicionario):
         print(f"  [ERRO] Erro ao preencher Centro de Custo: {e}")
         return False
     
-
 def lidar_com_popup_de_confirmacao(page):
     """
     Verifica se o popup de confirmação 'Atenção' está visível e clica em 'Sim'.
@@ -1237,137 +1236,140 @@ def main():
         return
 
     logs_processos = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False)
+            page = browser.new_page()
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        page = browser.new_page()
+            # Login
+            login_info = login_legalone(page, usuario, senha)
+            print(f"[{login_info['etapa']}] {login_info['status']} ({login_info['duracao']}s)")
+            if login_info["status"] == "Falha":
+                print(f"[ERRO] Erro no login: {login_info.get('mensagem', '')}")
+                browser.close()
+                return
 
-        # Login
-        login_info = login_legalone(page, usuario, senha)
-        print(f"[{login_info['etapa']}] {login_info['status']} ({login_info['duracao']}s)")
-        if login_info["status"] == "Falha":
-            print(f"[ERRO] Erro no login: {login_info.get('mensagem', '')}")
-            browser.close()
-            return
+            for i, row in df.iterrows():
+                dados_linha = row.dropna().to_dict()
+                numero = str(dados_linha.get("Processo", "")).strip()
+                if not numero:
+                    continue
 
-        for i, row in df.iterrows():
-            dados_linha = row.dropna().to_dict()
-            numero = str(dados_linha.get("Processo", "")).strip()
-            if not numero:
-                continue
+                print(f"\n[INFO] Atualizando processo: {numero}")
+                log = iniciar_log_processo(numero)
 
-            print(f"\n[INFO] Atualizando processo: {numero}")
-            log = iniciar_log_processo(numero)
+                # Acesso
+                acesso = acessar_processo_para_edicao(page, numero)
+                print(f"[{acesso['etapa']}] {acesso['status']} ({acesso['duracao']}s)")
+                adicionar_evento(log, acesso["etapa"], acesso["status"].lower(), "Abertura", acesso.get("mensagem", ""), acesso["duracao"])
+                if acesso["status"] == "Falha":
+                    logs_processos.append(log)
+                    continue
 
-            # Acesso
-            acesso = acessar_processo_para_edicao(page, numero)
-            print(f"[{acesso['etapa']}] {acesso['status']} ({acesso['duracao']}s)")
-            adicionar_evento(log, acesso["etapa"], acesso["status"].lower(), "Abertura", acesso.get("mensagem", ""), acesso["duracao"])
-            if acesso["status"] == "Falha":
+                # Painéis
+                expandir = expandir_paineis(page)
+                adicionar_evento(log, expandir["etapa"], expandir["status"].lower(), "Expansão", expandir.get("mensagem", ""), expandir["duracao"])
+
+                # Escritório Responsável
+                valor_escritorio = dados_linha.get("Escritório Responsável")
+                if valor_escritorio:
+                    inicio_escritorio = time.time()
+                    sucesso = preencher_escritorio_responsavel(page, valor_escritorio, MAPA_ESCRITORIO_RESPONSAVEL)
+                    duracao = round(time.time() - inicio_escritorio, 2)
+                    status = "sucesso" if sucesso else "erro"
+                    adicionar_evento(log, "Escritório Responsável", status, "Preenchimento", "", duracao)
+
+                # Negociação do Contrato de Honorários
+                valor_negociacao = dados_linha.get("Negociação do Contrato de Honorários")
+                if valor_negociacao:
+                    inicio_negociacao = time.time()
+                    sucesso = preencher_negociacao_honorario(page, valor_negociacao, MAPA_NEGOCIACAO_HONORARIO)
+                    duracao = round(time.time() - inicio_negociacao, 2)
+                    status = "sucesso" if sucesso else "erro"
+                    adicionar_evento(log, "Negociação do Contrato de Honorários", status, "Preenchimento", "", duracao)
+
+                # Centro de Custo
+                valor_centro_custo = dados_linha.get("Centro de Custo")
+                if valor_centro_custo:
+                    inicio_cc = time.time()
+                    sucesso = preencher_centro_custo(page, valor_centro_custo, MAPA_CENTRO_CUSTO)
+                    duracao = round(time.time() - inicio_cc, 2)
+                    status = "sucesso" if sucesso else "erro"
+                    adicionar_evento(log, "Centro de Custo", status, "Preenchimento", "", duracao)
+
+                # Cascata
+                cascata = preencher_lookups_em_cascata(page, dados_linha, mapeamento)
+                adicionar_evento(log, cascata["etapa"], cascata["status"].lower(), "Lookups", cascata.get("mensagem", ""), cascata["duracao"])
+
+                # Envolvidos
+                envolvidos = preencher_outros_envolvidos(page, dados_linha)
+                adicionar_evento(log, envolvidos["etapa"], envolvidos["status"].lower(), "Preenchimento", envolvidos.get("mensagem", ""), envolvidos["duracao"])
+
+                # Objetos
+                objetos = preencher_objetos(page, dados_linha)
+                adicionar_evento(log, objetos["etapa"], objetos["status"].lower(), "Preenchimento", objetos.get("messagem", ""), objetos["duracao"])
+
+                # Pedidos
+                pedidos = preencher_pedidos(page, dados_linha, mapeamento)
+                adicionar_evento(log, pedidos["etapa"], pedidos["status"].lower(), "Preenchimento", pedidos.get("mensagem", ""), pedidos["duracao"])
+
+                # Adverso principal (condicional)
+                if "Adverso Principal" in dados_linha and str(dados_linha["Adverso Principal"]).strip():
+                    adverso = preencher_adverso_principal(page, dados_linha)
+                    adicionar_evento(log, adverso["etapa"], adverso["status"].lower(), "Principal", adverso.get("mensagem", ""), adverso["duracao"])
+
+                # Campos gerais
+                campos = atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento)
+                adicionar_evento(log, campos["etapa"], campos["status"].lower(), "Atualização", campos.get("messagem", ""), campos["duracao"])
+
+                # SALVAR ALTERAÇÕES COM VERIFICAÇÃO DE FALHA
+                try:
+                    inicio_salvar = time.time()
+                    botao_salvar = page.query_selector('button[name="ButtonSave"]')
+
+                    if botao_salvar and botao_salvar.is_enabled():
+                        botao_salvar.scroll_into_view_if_needed()
+                        botao_salvar.click()
+                        
+                        # Lida com qualquer popup de confirmação que possa aparecer
+                        lidar_com_popup_de_confirmacao(page)
+                        
+                        try:
+                            # Aguarda a notificação de sucesso aparecer na tela por até 10 segundos.
+                            page.wait_for_selector(
+                                'div.message-content:has-text("alterado com sucesso")',
+                                timeout=10000
+                            )
+                            duracao = round(time.time() - inicio_salvar, 2)
+                            adicionar_evento(log, "Salvar", "sucesso", "Confirmação", "", duracao)
+                            print(f"[SALVO] Processo {numero} salvo com sucesso ({duracao}s)")
+                        
+                        except Exception as e: # Especificamente um TimeoutError, mas Exception captura tudo.
+                            duracao = round(time.time() - inicio_salvar, 2)
+                            mensagem = "Falha ao salvar: a notificação de sucesso não foi encontrada."
+                            adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
+                            print(f"[ERRO] {mensagem} no processo {numero}")
+
+                    else:
+                        adicionar_evento(log, "Salvar", "erro", "Confirmação", "Botão 'Salvar' desabilitado ou não encontrado", 0)
+                        print(f"[AVISO] Botão 'Salvar' não disponível para o processo {numero}")
+
+                except Exception as e:
+                    adicionar_evento(log, "Salvar", "erro", "Confirmação", str(e), 0)
+                    print(f"[ERRO] Falha crítica ao tentar salvar processo {numero}: {e}")
+                
+                print(f"[SUCESSO] Preenchimento concluído para {numero}.")
                 logs_processos.append(log)
-                continue
 
-            # Painéis
-            expandir = expandir_paineis(page)
-            adicionar_evento(log, expandir["etapa"], expandir["status"].lower(), "Expansão", expandir.get("mensagem", ""), expandir["duracao"])
+            print("\n[INFO] Todos os processos da planilha foram concluídos. Encerrando o navegador...")
+            browser.close()
 
-            # Escritório Responsável
-            valor_escritorio = dados_linha.get("Escritório Responsável")
-            if valor_escritorio:
-                inicio_escritorio = time.time()
-                sucesso = preencher_escritorio_responsavel(page, valor_escritorio, MAPA_ESCRITORIO_RESPONSAVEL)
-                duracao = round(time.time() - inicio_escritorio, 2)
-                status = "sucesso" if sucesso else "erro"
-                adicionar_evento(log, "Escritório Responsável", status, "Preenchimento", "", duracao)
-
-            # Negociação do Contrato de Honorários
-            valor_negociacao = dados_linha.get("Negociação do Contrato de Honorários")
-            if valor_negociacao:
-                inicio_negociacao = time.time()
-                sucesso = preencher_negociacao_honorario(page, valor_negociacao, MAPA_NEGOCIACAO_HONORARIO)
-                duracao = round(time.time() - inicio_negociacao, 2)
-                status = "sucesso" if sucesso else "erro"
-                adicionar_evento(log, "Negociação do Contrato de Honorários", status, "Preenchimento", "", duracao)
-
-            # Centro de Custo
-            valor_centro_custo = dados_linha.get("Centro de Custo")
-            if valor_centro_custo:
-                inicio_cc = time.time()
-                sucesso = preencher_centro_custo(page, valor_centro_custo, MAPA_CENTRO_CUSTO)
-                duracao = round(time.time() - inicio_cc, 2)
-                status = "sucesso" if sucesso else "erro"
-                adicionar_evento(log, "Centro de Custo", status, "Preenchimento", "", duracao)
-
-            # Cascata
-            cascata = preencher_lookups_em_cascata(page, dados_linha, mapeamento)
-            adicionar_evento(log, cascata["etapa"], cascata["status"].lower(), "Lookups", cascata.get("mensagem", ""), cascata["duracao"])
-
-            # Envolvidos
-            envolvidos = preencher_outros_envolvidos(page, dados_linha)
-            adicionar_evento(log, envolvidos["etapa"], envolvidos["status"].lower(), "Preenchimento", envolvidos.get("mensagem", ""), envolvidos["duracao"])
-
-            # Objetos
-            objetos = preencher_objetos(page, dados_linha)
-            adicionar_evento(log, objetos["etapa"], objetos["status"].lower(), "Preenchimento", objetos.get("messagem", ""), objetos["duracao"])
-
-            # Pedidos
-            pedidos = preencher_pedidos(page, dados_linha, mapeamento)
-            adicionar_evento(log, pedidos["etapa"], pedidos["status"].lower(), "Preenchimento", pedidos.get("mensagem", ""), pedidos["duracao"])
-
-            # Adverso principal (condicional)
-            if "Adverso Principal" in dados_linha and str(dados_linha["Adverso Principal"]).strip():
-                adverso = preencher_adverso_principal(page, dados_linha)
-                adicionar_evento(log, adverso["etapa"], adverso["status"].lower(), "Principal", adverso.get("mensagem", ""), adverso["duracao"])
-
-            # Campos gerais
-            campos = atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento)
-            adicionar_evento(log, campos["etapa"], campos["status"].lower(), "Atualização", campos.get("messagem", ""), campos["duracao"])
-
-            # SALVAR ALTERAÇÕES COM VERIFICAÇÃO DE FALHA
-            try:
-                inicio_salvar = time.time()
-                botao_salvar = page.query_selector('button[name="ButtonSave"]')
-
-                if botao_salvar and botao_salvar.is_enabled():
-                    botao_salvar.scroll_into_view_if_needed()
-                    botao_salvar.click()
-                    
-                    # Lida com qualquer popup de confirmação que possa aparecer
-                    lidar_com_popup_de_confirmacao(page)
-                    
-                    try:
-                        # Aguarda a notificação de sucesso aparecer na tela por até 10 segundos.
-                        page.wait_for_selector(
-                            'div.message-content:has-text("alterado com sucesso")',
-                            timeout=10000
-                        )
-                        duracao = round(time.time() - inicio_salvar, 2)
-                        adicionar_evento(log, "Salvar", "sucesso", "Confirmação", "", duracao)
-                        print(f"[SALVO] Processo {numero} salvo com sucesso ({duracao}s)")
-                    
-                    except Exception as e: # Especificamente um TimeoutError, mas Exception captura tudo.
-                        duracao = round(time.time() - inicio_salvar, 2)
-                        mensagem = "Falha ao salvar: a notificação de sucesso não foi encontrada."
-                        adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
-                        print(f"[ERRO] {mensagem} no processo {numero}")
-
-                else:
-                    adicionar_evento(log, "Salvar", "erro", "Confirmação", "Botão 'Salvar' desabilitado ou não encontrado", 0)
-                    print(f"[AVISO] Botão 'Salvar' não disponível para o processo {numero}")
-
-            except Exception as e:
-                adicionar_evento(log, "Salvar", "erro", "Confirmação", str(e), 0)
-                print(f"[ERRO] Falha crítica ao tentar salvar processo {numero}: {e}")
-            
-            print(f"[SUCESSO] Preenchimento concluído para {numero}.")
-            logs_processos.append(log)
-
-        print("\n[INFO] Todos os processos da planilha foram concluídos. Encerrando o navegador...")
-        browser.close()
-
-    salvar_log_execucao(logs_processos)
-    tempo_total = time.time() - start_time
-    print(f"\n[TEMPO] Tempo total de execução: {tempo_total:.2f} segundos.")
+    finally:
+            # Este bloco SEMPRE será executado, garantindo que o log seja salvo.
+            print("\n[INFO] Finalizando script. Salvando log da execução...")
+            salvar_log_execucao(logs_processos)
+            tempo_total = time.time() - start_time
+            print(f"\n[TEMPO] Tempo total de execução: {tempo_total:.2f} segundos.")
     
 if __name__ == "__main__":
     main()
