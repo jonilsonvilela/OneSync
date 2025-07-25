@@ -1239,31 +1239,34 @@ def gerar_relatorio_sumarizado(lista_logs: list, timestamp: str):
 def salvar_log_execucao(lista_logs: list):
     """
     Salva o log detalhado em JSON e chama a função para gerar o relatório sumarizado.
+    O Status Geral é definido EXCLUSIVAMENTE pelo sucesso da etapa 'Salvar'.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     pasta_logs = Path(__file__).resolve().parent / "data" / "logs_execucao"
     pasta_logs.mkdir(parents=True, exist_ok=True)
     caminho_json = pasta_logs / f"log_{timestamp}.json"
 
-    # Atualiza status geral antes de salvar
+    # Atualiza status geral com base na regra de negócio final
     for log in lista_logs:
-        # A condição `any(log.get("Erros", []))` é mais robusta
-        if any(log.get("Erros", [])):
-            log["Status Geral"] = "Falha"
-        else:
-            log["Status Geral"] = "Sucesso"
+        # Procura por um evento de sucesso específico da etapa 'Salvar'
+        # Esta é a única condição que define o sucesso de um processo.
+        sucesso_ao_salvar = any(
+            evento.get("etapa") == "Salvar" 
+            for evento in log.get("Sucessos", [])
+        )
 
-    # Salva o log detalhado em JSON
+        if sucesso_ao_salvar:
+            log["Status Geral"] = "Sucesso"
+        else:
+            log["Status Geral"] = "Falha"
+
+    # Salva o log detalhado em JSON, agora com o Status Geral correto
     with open(caminho_json, "w", encoding="utf-8") as f:
         json.dump(lista_logs, f, ensure_ascii=False, indent=2)
     print(f"[LOG] Log detalhado da execução salvo em: {caminho_json}")
 
-    # ================================================================= #
-    # ✨ CÓDIGO ADICIONADO ✨
-    # ================================================================= #
-    # Chama a nova função para gerar também o relatório em CSV
+    # Chama a função para gerar o relatório sumarizado em CSV, que usará o status correto
     gerar_relatorio_sumarizado(lista_logs, timestamp)
-    # ================================================================= #
 
 def main():
     start_time = time.time()
