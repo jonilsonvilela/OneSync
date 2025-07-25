@@ -61,8 +61,10 @@ def executar_script():
 # --- FUNÇÃO AUXILIAR PARA PROCESSAR DADOS DO DASHBOARD ---
 def processar_dados_dashboard(dados_log):
     total_processos = len(dados_log)
+    
+    # Lógica de contagem corrigida para ser explícita
     sucessos = sum(1 for p in dados_log if p.get("Status Geral") == "Sucesso")
-    falhas = total_processos - sucessos
+    falhas = sum(1 for p in dados_log if p.get("Status Geral") == "Falha")
     tempo_total = sum(d for p in dados_log for d in p.get("Duracao por etapa (s)", {}).values())
     
     duracao_por_etapa = {}
