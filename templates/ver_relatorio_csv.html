@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold">Visualizando Relatório Sumarizado</h1>
+        <p class="text-gray-500 font-mono">{{ nome_arquivo }}</p>
+    </div>
+    <a href="{{ url_for('baixar_relatorio_csv', nome=nome_arquivo) }}" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700">
+        Baixar este CSV
+    </a>
+</div>
+
+<div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
+    <style>
+        .table-auto { border-collapse: collapse; width: 100%; text-align: left; }
+        .table-auto th, .table-auto td { border: 1px solid #e2e8f0; padding: 8px 12px; }
+        .table-auto th { background-color: #f7fafc; font-weight: bold; }
+        .dark .table-auto th, .dark .table-auto td { border-color: #4a5568; }
+        .dark .table-auto th { background-color: #2d3748; }
+    </style>
+    {{ tabela|safe }}
+</div>
+{% endblock %}

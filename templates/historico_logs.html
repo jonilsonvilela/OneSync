@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">📚 Histórico de Logs de Execução (JSON)</h1>
+
+{% if arquivos %}
+  <div class="space-y-3">
+    {% for log in arquivos %}
+      <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm transition-all hover:shadow-lg hover:border-l-4 hover:border-indigo-500">
+        <span class="text-base font-medium text-gray-800">{{ log.exibicao }}</span>
+        <div class="space-x-3">
+            <a href="{{ url_for('ver_log', nome_arquivo=log.original) }}" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">Visualizar Dashboard</a>
+            <a href="{{ url_for('baixar_log', nome=log.original) }}" class="bg-gray-500 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-600">Baixar JSON</a>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="text-center bg-white p-10 rounded-lg shadow-md">
+    <h2 class="text-xl font-bold text-gray-700">Nenhum log encontrado.</h2>
+  </div>
+{% endif %}
+{% endblock %}
