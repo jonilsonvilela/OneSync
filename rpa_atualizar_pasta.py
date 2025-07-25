@@ -777,6 +777,8 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
         "Data da Baixa",
         "Data do Encerramento",
         "Data da Distribuição",
+        "Data da Terceirização",
+        "Data da Terceirizacao"
     }
 
     for coluna, valor in dados_linha.items():
@@ -1324,36 +1326,39 @@ def main():
             # SALVAR ALTERAÇÕES COM VERIFICAÇÃO DE FALHA
             try:
                 inicio_salvar = time.time()
-                url_antes = page.url
                 botao_salvar = page.query_selector('button[name="ButtonSave"]')
 
                 if botao_salvar and botao_salvar.is_enabled():
                     botao_salvar.scroll_into_view_if_needed()
                     botao_salvar.click()
                     
-                    # *** LÓGICA MOVIDA PARA CÁ: TRATAR O POPUP APÓS O CLIQUE ***
+                    # Lida com qualquer popup de confirmação que possa aparecer
                     lidar_com_popup_de_confirmacao(page)
                     
-                    # Pausa para a página processar a ação e atualizar a URL
-                    page.wait_for_timeout(2500)
-                    
-                    url_depois = page.url
-                    duracao = round(time.time() - inicio_salvar, 2)
-
-                    if url_antes == url_depois:
-                        mensagem = "Falha ao salvar — validação obrigatória ou popup não tratado"
-                        adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
-                        print(f"[ERRO] {mensagem} no processo {numero}")
-                    else:
+                    try:
+                        # Aguarda a notificação de sucesso aparecer na tela por até 10 segundos.
+                        page.wait_for_selector(
+                            'div.message-content:has-text("alterado com sucesso")',
+                            timeout=10000
+                        )
+                        duracao = round(time.time() - inicio_salvar, 2)
                         adicionar_evento(log, "Salvar", "sucesso", "Confirmação", "", duracao)
                         print(f"[SALVO] Processo {numero} salvo com sucesso ({duracao}s)")
+                    
+                    except Exception as e: # Especificamente um TimeoutError, mas Exception captura tudo.
+                        duracao = round(time.time() - inicio_salvar, 2)
+                        mensagem = "Falha ao salvar: a notificação de sucesso não foi encontrada."
+                        adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
+                        print(f"[ERRO] {mensagem} no processo {numero}")
+
                 else:
-                    adicionar_evento(log, "Salvar", "erro", "Confirmação", "Botão desabilitado ou não encontrado", 0)
+                    adicionar_evento(log, "Salvar", "erro", "Confirmação", "Botão 'Salvar' desabilitado ou não encontrado", 0)
                     print(f"[AVISO] Botão 'Salvar' não disponível para o processo {numero}")
+
             except Exception as e:
                 adicionar_evento(log, "Salvar", "erro", "Confirmação", str(e), 0)
-                print(f"[ERRO] Falha ao tentar salvar processo {numero}: {e}")
-
+                print(f"[ERRO] Falha crítica ao tentar salvar processo {numero}: {e}")
+            
             print(f"[SUCESSO] Preenchimento concluído para {numero}.")
             logs_processos.append(log)
 
