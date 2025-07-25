@@ -87,25 +87,6 @@ def adicionar_evento(log: dict, etapa: str, tipo: str, item: str, mensagem: str 
     if duracao is not None:
         log.setdefault("Duracao por etapa (s)", {})[etapa] = duracao
 
-def salvar_log_execucao(lista_logs: list):
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    pasta = Path(__file__).resolve().parent / "data" / "logs_execucao"
-    pasta.mkdir(parents=True, exist_ok=True)
-
-    path = pasta / f"log_{ts}.json"
-
-    # Atualiza status geral
-    for log in lista_logs:
-        if any("mensagem" in erro for erro in log.get("Erros", [])):
-            log["Status Geral"] = "Falha"
-        else:
-            log["Status Geral"] = "Sucesso"
-
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(lista_logs, f, ensure_ascii=False, indent=2)
-
-    print(f"[LOG] Log da execução salvo em: {path}")
-
 def login_legalone(page, usuario, senha):
     """LOGIN NO PORTAL LEGAL ONE"""
     inicio = time.time()
@@ -1185,6 +1166,7 @@ def preencher_centro_custo(page, valor_lookup, dicionario):
         return False
     
 def lidar_com_popup_de_confirmacao(page):
+
     """
     Verifica se o popup de confirmação 'Atenção' está visível e clica em 'Sim'.
     Usa um timeout de 5 segundos para esperar o elemento aparecer.
@@ -1211,6 +1193,77 @@ def lidar_com_popup_de_confirmacao(page):
     except Exception as e:
         # Captura outras exceções inesperadas, mas não interrompe o fluxo.
         print(f"   - [AVISO] Ocorreu um erro inesperado ao tentar lidar com o popup: {e}")
+
+def gerar_relatorio_sumarizado(lista_logs: list, timestamp: str):
+    """
+    Cria um relatório sumarizado em CSV a partir da lista de logs.
+    """
+    print("[INFO] Gerando relatório sumarizado em CSV...")
+    if not lista_logs:
+        print("[AVISO] Lista de logs vazia. Nenhum relatório sumarizado será gerado.")
+        return
+
+    dados_relatorio = []
+    for log in lista_logs:
+        processo = log.get("Processo", "N/A")
+        status = log.get("Status Geral", "Indefinido")
+        duracao_total = sum(log.get("Duracao por etapa (s)", {}).values())
+        
+        etapa_falha = ""
+        mensagem_erro = ""
+
+        if status == "Falha" and log.get("Erros"):
+            primeiro_erro = log["Erros"][0]
+            etapa_falha = primeiro_erro.get("etapa", "N/A")
+            mensagem_erro = primeiro_erro.get("mensagem", "Sem detalhes")
+
+        dados_relatorio.append({
+            "Processo": processo,
+            "Status": status,
+            "Duracao_Total_s": round(duracao_total, 2),
+            "Etapa_Falha": etapa_falha,
+            "Mensagem_Erro": mensagem_erro
+        })
+
+    # Cria a pasta para os relatórios sumarizados
+    pasta_relatorios = Path(__file__).resolve().parent / "data" / "relatorios_sumarizados"
+    pasta_relatorios.mkdir(parents=True, exist_ok=True)
+    caminho_csv = pasta_relatorios / f"relatorio_{timestamp}.csv"
+
+    # Cria e salva o DataFrame
+    df_relatorio = pd.DataFrame(dados_relatorio)
+    df_relatorio.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
+    
+    print(f"[RELATÓRIO] Relatório sumarizado salvo em: {caminho_csv}")
+
+def salvar_log_execucao(lista_logs: list):
+    """
+    Salva o log detalhado em JSON e chama a função para gerar o relatório sumarizado.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    pasta_logs = Path(__file__).resolve().parent / "data" / "logs_execucao"
+    pasta_logs.mkdir(parents=True, exist_ok=True)
+    caminho_json = pasta_logs / f"log_{timestamp}.json"
+
+    # Atualiza status geral antes de salvar
+    for log in lista_logs:
+        # A condição `any(log.get("Erros", []))` é mais robusta
+        if any(log.get("Erros", [])):
+            log["Status Geral"] = "Falha"
+        else:
+            log["Status Geral"] = "Sucesso"
+
+    # Salva o log detalhado em JSON
+    with open(caminho_json, "w", encoding="utf-8") as f:
+        json.dump(lista_logs, f, ensure_ascii=False, indent=2)
+    print(f"[LOG] Log detalhado da execução salvo em: {caminho_json}")
+
+    # ================================================================= #
+    # ✨ CÓDIGO ADICIONADO ✨
+    # ================================================================= #
+    # Chama a nova função para gerar também o relatório em CSV
+    gerar_relatorio_sumarizado(lista_logs, timestamp)
+    # ================================================================= #
 
 def main():
     start_time = time.time()
