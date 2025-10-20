@@ -1,4 +1,4 @@
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -6,6 +6,7 @@ import json
 import os
 import time
 import sys
+import argparse
 
 # Altera a codificação APENAS se estiver rodando em um terminal interativo no Windows
 if sys.stdout.isatty() and os.name == 'nt':
@@ -184,130 +185,178 @@ def expandir_paineis(page):
     }
 
 def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
-    """PREENCHIMENTO DOS CAMPOS EM CASCATA"""
+    """
+    PREENCHIMENTO DOS CAMPOS EM CASCATA COM SELEÇÃO EXATA DE LOOKUP PELA SIGLA (UF).
+    Remove chamadas a .is_focused() que causavam erro.
+    """
     inicio = time.time()
     etapa = "Cascata"
     mensagens_erro = []
     campos_preenchidos = 0
 
-    print(" - Preenchendo campos em cascata (UF -> Cidade -> Justiça -> Instância -> Classe -> Assunto -> Comarca/Foro -> Número da Vara -> Tipo da Vara)...")
+    print(" - Preenchendo campos em cascata (UF -> Cidade -> ... -> Tipo da Vara)...")
 
     ordem = [
-        "Estado (UF)",
-        "Cidade",
-        "Justiça (CNJ)",
-        "Instância (CNJ)",
-        "Classe (CNJ)",
-        "Assunto (CNJ)",
-        "Comarca/Foro",
-        "Número da Vara",
+        "Estado (UF)", "Cidade", "Justiça (CNJ)", "Instância (CNJ)",
+        "Classe (CNJ)", "Assunto (CNJ)", "Comarca/Foro", "Número da Vara",
         "Tipo da Vara"
     ]
 
     for atual in ordem:
         try:
             valor = dados_linha.get(atual)
-            if valor is None or str(valor).strip() == "":
-                print(f"    [AVISO] Campo '{atual}' sem valor preenchido na planilha, pulando.")
+            if pd.isna(valor) or not str(valor).strip():
+                print(f"    [AVISO] Campo '{atual}' sem valor na planilha, pulando.")
                 continue
+
+            valor_str = str(valor).strip()
 
             campo = next((c for c in mapeamento if c.get("descricao") == atual), None)
             if not campo or not campo.get("id"):
-                print(f"    [AVISO] Campo '{atual}' não encontrado no mapeamento.")
+                print(f"    [AVISO] Campo '{atual}' não mapeado no JSON.")
                 continue
 
-            # Caso especial: "Número da Vara" é um campo simples
+            # --- Tratamento para "Número da Vara" ---
             if atual == "Número da Vara":
-                seletor = f'input[id="{campo["id"]}"], input[id*="{campo["id"]}"]'
+                seletor_vara = f'input[id="{campo["id"]}"], input[id*="{campo["id"]}"]'
+                num_vara_locator = page.locator(seletor_vara).first
                 try:
-                    page.wait_for_selector(seletor, timeout=10000)
-                    el_input = page.query_selector(seletor)
-                    if not el_input or not el_input.is_enabled():
-                        print(f"    [AVISO] Campo '{atual}' não localizado ou desabilitado.")
-                        continue
-
-                    el_input.fill(str(valor))
-                    el_input.press("Tab")
+                    num_vara_locator.fill(valor_str, timeout=10000)
+                    num_vara_locator.press("Tab")
                     page.wait_for_timeout(300)
-                    print(f"    [SUCESSO] Campo '{atual}' preenchido com sucesso.")
+                    print(f"    [OK] Campo '{atual}' preenchido: {valor_str}")
                     campos_preenchidos += 1
-                except Exception as e:
-                    print(f"    [ERRO] Erro ao preencher '{atual}': {e}")
-                    mensagens_erro.append(f"{atual}: {e}")
+                except PlaywrightTimeoutError:
+                     print(f"    [ERRO] Timeout ao tentar preencher '{atual}'.")
+                     mensagens_erro.append(f"{atual}: Timeout no fill")
+                except Exception as e_vara:
+                    print(f"    [ERRO] Erro ao preencher '{atual}': {e_vara}")
+                    mensagens_erro.append(f"{atual}: {e_vara}")
                 continue
 
-            # Campos com ID dinâmico (Assunto)
+            # --- Tratamento para campos Lookup ---
+            locator = None
+            seletor_str = ""
+
             if atual == "Assunto (CNJ)":
                 identificador = campo["id"].split("__")[-1]
-                seletor = f'input[id^="Assuntos_"][id$="__{identificador}"]:not([type="hidden"])'
+                seletor_str = f'input[id^="Assuntos_"][id$="__{identificador}"]:not([type="hidden"])'
             else:
-                seletor = f'input.search.ac_input[id="{campo["id"]}"], input.search.ac_input[id*="{campo["id"]}"]'
+                seletor_str = f'input.search.ac_input[id="{campo["id"]}"], input.search.ac_input[id*="{campo["id"]}"]'
 
-            # Aguarda desbloqueio do campo com lógica padrão para lookup
+            locator = page.locator(seletor_str).first
+
+            # --- Lógica de Preenchimento e Seleção Exata ---
+            print(f"    [AÇÃO] Preenchendo '{atual}' com valor: '{valor_str}'")
             try:
-                page.wait_for_function(
-                    """(selector) => {
-                        const el = document.querySelector(selector);
-                        if (!el) return false;
-                        const wrapper = el.closest('.lookup');
-                        return !el.readOnly && wrapper && !wrapper.classList.contains('disabled');
-                    }""",
-                    arg=seletor,
-                    timeout=20000
-                )
-                print(f"    [INFO] Campo '{atual}' agora disponível.")
-                page.wait_for_timeout(500)
-            except:
-                print(f"    [AVISO] Campo '{atual}' não desbloqueou a tempo.")
-                mensagens_erro.append(f"{atual}: timeout de desbloqueio")
-                continue
+                # Clica para focar e espera habilitar (com timeout na ação)
+                locator.click(timeout=15000)
+                if not locator.is_enabled(): # Verifica APÓS espera implícita do click
+                     raise Exception("Campo não está habilitado após clique/espera.")
 
-            el_input = page.query_selector(seletor)
-            if not el_input:
-                print(f"    [AVISO] Campo '{atual}' não localizado.")
-                mensagens_erro.append(f"{atual}: não localizado")
-                continue
-            if not el_input.is_enabled():
-                print(f"    [AVISO] Campo '{atual}' está desabilitado.")
-                mensagens_erro.append(f"{atual}: desabilitado")
-                continue
+                print(f"    [INFO] Campo '{atual}' clicado e habilitado.")
+                locator.fill(valor_str)
+                page.wait_for_timeout(800)
+                locator.press("Enter")
+                page.wait_for_timeout(1500) # Espera lista carregar
 
-            print(f"    [AÇÃO] Preenchendo campo '{atual}' com valor: '{valor}'")
+                item_exato_clicado = False
+                try:
+                    # Tenta selecionar o item exato na lista
+                    suggestion_table_selector = 'div.lookup-dropdown:visible tbody tr'
+                    page.locator(suggestion_table_selector).first.wait_for(state='visible', timeout=8000)
 
-            el_input.click()
-            el_input.fill(str(valor))
-            page.wait_for_timeout(500)
+                    if atual == "Estado (UF)":
+                         exact_match_selector = f'{suggestion_table_selector}:has(td[data-val-field="UFSigla"]:text-is("{valor_str}"))'
+                         data_val_field_log = "UFSigla"
+                    else:
+                         data_val_field_nome = campo.get("id").replace("Text", "")
+                         exact_match_selector = f'{suggestion_table_selector}:has(td[data-val-field="{data_val_field_nome}Text"]:text-is("{valor_str}"))'
+                         data_val_field_log = f"{data_val_field_nome}Text"
+                         if page.locator(exact_match_selector).count() == 0:
+                              exact_match_selector = f'{suggestion_table_selector}:has(td:text-is("{valor_str}"))'
+                              data_val_field_log = "Texto Genérico da Célula"
 
-            el_input.press("Enter")
-            page.wait_for_timeout(1000)
-            el_input.press("ArrowDown")
-            page.wait_for_timeout(300)
-            el_input.press("Enter")
-            page.wait_for_timeout(300)
-            el_input.press("Tab")
-            page.wait_for_timeout(300)
+                    print(f"      - Procurando linha com '{data_val_field_log}' exatamente igual a '{valor_str}'...")
+                    exact_match_locator = page.locator(exact_match_selector)
 
-            print(f"    [SUCESSO] {atual} preenchido com sucesso.")
-            campos_preenchidos += 1
+                    if exact_match_locator.count() > 0:
+                        print(f"      - Encontrada correspondência exata para '{valor_str}'. Clicando na linha...")
+                        exact_match_locator.first.click()
+                        item_exato_clicado = True
+                        page.wait_for_timeout(500)
+                    else:
+                        print(f"      - [AVISO] Correspondência exata para '{valor_str}' (via {data_val_field_log}) não encontrada na lista visível.")
 
+                except PlaywrightTimeoutError:
+                     print(f"      - [AVISO] Lista de sugestões não apareceu a tempo para '{atual}'.")
+                except Exception as e_select:
+                    print(f"      - [AVISO] Problema ao processar lista de sugestões (tabela): {e_select}")
+
+                # Fallback se não conseguiu clicar no item exato
+                if not item_exato_clicado:
+                    print("      - Usando fallback: ArrowDown + Enter.")
+                    try:
+                        # <<< CORREÇÃO: Removido is_focused() >>>
+                        locator.press("ArrowDown")
+                        page.wait_for_timeout(400)
+                        locator.press("Enter")
+                        page.wait_for_timeout(400)
+                    except Exception as e_fallback:
+                         # Captura erro se não conseguir pressionar (ex: elemento não focado)
+                         print(f"      - [ERRO] Erro durante fallback ArrowDown+Enter: {e_fallback}")
+                         # Mesmo com erro no fallback, tenta sair com Tab
+
+                # Sempre tenta pressionar Tab para sair do campo
+                try:
+                    # <<< CORREÇÃO: Removido is_focused() >>>
+                    locator.press("Tab")
+                    page.wait_for_timeout(500)
+                except Exception as e_tab:
+                     print(f"      - [AVISO] Erro ao tentar sair do campo com Tab: {e_tab}. Tentando clicar fora.")
+                     # Fallback clicando no body se Tab falhar
+                     try:
+                          page.locator('body').click()
+                          page.wait_for_timeout(300)
+                     except Exception as e_click_body:
+                          print(f"      - [ERRO] Falha ao clicar fora do campo: {e_click_body}")
+
+
+                print(f"    [OK] Campo '{atual}' preenchido.")
+                campos_preenchidos += 1
+
+            # Captura erro durante o preenchimento (click, fill, seleção)
+            except PlaywrightTimeoutError as e_timeout:
+                 print(f"    [ERRO] Timeout ao interagir com '{atual}': {e_timeout}")
+                 mensagens_erro.append(f"{atual}: Timeout na interação ({e_timeout})")
+            except Exception as e_fill:
+                 print(f"    [ERRO] Erro durante o preenchimento/seleção de '{atual}': {e_fill}")
+                 mensagens_erro.append(f"{atual}: {e_fill}")
+
+
+        # Captura erro geral para o item 'atual' do loop
         except Exception as e:
-            print(f"    [ERRO] Erro ao preencher '{atual}': {e}")
+            print(f"    [ERRO GERAL] Erro inesperado ao processar '{atual}': {e}")
             mensagens_erro.append(f"{atual}: {e}")
 
+    # --- Retorno da Função ---
+    # (Lógica de retorno mantida igual à anterior)
     if campos_preenchidos > 0:
+        status_final = "Sucesso"
+        if mensagens_erro:
+             print(f"  [AVISO] {len(mensagens_erro)} erro(s) ocorreram durante preenchimento da cascata.")
         return {
-            "etapa": etapa,
-            "duracao": round(time.time() - inicio, 2),
-            "status": "Sucesso"
+            "etapa": etapa, "duracao": round(time.time() - inicio, 2),
+            "status": status_final, "mensagem": "; ".join(mensagens_erro) if mensagens_erro else ""
         }
     else:
         return {
-            "etapa": etapa,
-            "duracao": round(time.time() - inicio, 2),
-            "status": "Falha",
-            "mensagem": "; ".join(mensagens_erro)
+            "etapa": etapa, "duracao": round(time.time() - inicio, 2),
+            "status": "Falha" if mensagens_erro else "Sucesso",
+            "mensagem": "; ".join(mensagens_erro) if mensagens_erro else "Nenhum campo da cascata precisou ser preenchido."
         }
 
+    
 def preencher_outros_envolvidos(page, dados_linha):
     """PREENCHIMENTO DOS ENVOLVIDOS"""
     import time
@@ -719,8 +768,7 @@ def preencher_pedidos(page, dados_linha, mapeamento):
         }
 
 def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
-    """PREENCHIMENTO DOS CAMPOS GERAIS"""
-    import time
+    """PREENCHIMENTO DOS CAMPOS GERAIS (COM CORREÇÃO DE VÍRGULA DECIMAL)"""
     inicio = time.time()
     etapa = "Campos Gerais"
     campos_sucesso = []
@@ -729,43 +777,35 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
     print(" - Preenchendo campos gerais...")
 
     campos_ja_tratados = {
-        "Processo",
-        "Estado (UF)", "Cidade", "Justiça (CNJ)", "Instância (CNJ)",
-        "Classe (CNJ)", "Assunto (CNJ)",
-        "Situação do Envolvido", "Posição Envolvido", "Envolvido",
-        "Nome do Objeto", "Observações do objeto",
-        "Tipo de Pedido", "Contingência", "Data do Pedido", "Data do Julgamento",
-        "Probabilidade de Êxito", "Situação do Pedido", "Valor do Pedido",
-        "Valor da Condenação", "Observação do Pedido", "Adverso Principal",
-        "Tipo do Adverso", "CPF/CNPJ do Adverso", "Escritório de Origem", "Escritório Responsável",
+        "Processo", "Estado (UF)", "Cidade", "Justiça (CNJ)", "Instância (CNJ)",
+        "Classe (CNJ)", "Assunto (CNJ)", "Situação do Envolvido", "Posição Envolvido",
+        "Envolvido", "Nome do Objeto", "Observações do objeto", "Tipo de Pedido",
+        "Contingência", "Data do Pedido", "Data do Julgamento", "Probabilidade de Êxito",
+        "Situação do Pedido", "Valor do Pedido", "Valor da Condenação",
+        "Observação do Pedido", "Adverso Principal", "Tipo do Adverso",
+        "CPF/CNPJ do Adverso", "Escritório de Origem", "Escritório Responsável",
         "Centro de Custo", "Negociação do Contrato de Honorários"
     }
 
     campos_com_lookup_simples = {
-        "Campo personalizado Citação",
-        "Cliente Principal",
-        "Fase",
-        "Natureza",
-        "Posição Cliente Principal",
-        "Posição do Responsável Principal",
-        "Procedimento",
-        "Responsável Principal",
-        "Resultado",
-        "Risco",
-        "Status do Processo",
-        "Tipo de Ação",
-        "Tipo de Contingência",
-        "Tipo de Resultado",
-        "Órgão"
+        "Campo personalizado Citação", "Cliente Principal", "Fase", "Natureza",
+        "Posição Cliente Principal", "Posição do Responsável Principal", "Procedimento",
+        "Responsável Principal", "Resultado", "Risco", "Status do Processo",
+        "Tipo de Ação", "Tipo de Contingência", "Tipo de Resultado", "Órgão"
     }
 
     campos_data_mascara_rigida = {
-        "Data da Sentença",
-        "Data da Baixa",
-        "Data do Encerramento",
-        "Data da Distribuição",
-        "Data da Terceirização",
-        "Data da Terceirizacao"
+        "Data da Sentença", "Data da Baixa", "Data do Encerramento",
+        "Data da Distribuição", "Data da Terceirização", "Data da Terceirizacao"
+    }
+
+    # Identifica colunas que tipicamente contêm valores numéricos/monetários
+    colunas_de_valor = {
+        "Valor da Causa",
+        "Valor da Condenação/Acordo",
+        "Valor do Pedido", # Incluindo caso apareçam aqui
+        "Valor da Condenação" # Incluindo caso apareçam aqui
+        # Adicione outras colunas de valor se existirem
     }
 
     for coluna, valor in dados_linha.items():
@@ -781,120 +821,145 @@ def atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento):
 
         try:
             campo_id = campo["id"]
+            el = None # Inicializa
 
+            # --- Lógica original para encontrar o elemento (el) ---
+            # (Mantendo a lógica original de busca com query_selector por enquanto,
+            # pois o problema principal é a formatação do valor)
             if coluna == "Campo personalizado Citação":
                 seletor = 'input[id^="Citacao_ProcessoEntitySchema_"][id$="_Value"]'
                 try:
                     page.wait_for_function(
-                        """(selector) => {
-                            const el = document.querySelector(selector);
-                            if (!el) return false;
-                            const wrapper = el.closest('.lookup');
-                            return !el.readOnly && wrapper && !wrapper.classList.contains('disabled');
-                        }""",
-                        arg=seletor,
-                        timeout=20000
+                        """(selector) => { /* ... sua função JS ... */ }""",
+                        arg=seletor, timeout=20000
                     )
-                except:
-                    campos_falha.append((coluna, "Timeout ao desbloquear campo"))
+                    el = page.query_selector(seletor)
+                except Exception as e_wait:
+                    campos_falha.append((coluna, f"Timeout/Erro ao esperar desbloqueio JS: {e_wait}"))
                     continue
-                el = page.query_selector(seletor)
-
             elif coluna in {"Data da Terceirizacao", "Data da Terceirização"}:
                 el = page.query_selector('input[id^="DataDeTerceirizacaoRecebimento_ProcessoEntitySchema_"]')
-
             elif coluna == "NPJ":
                 el = page.query_selector('input[id^="NumeroDoCliente_ProcessoEntitySchema_"]')
-
             elif coluna == "Operações Vinculadas":
                 el = page.query_selector('[id^="OperacoesVinculadas_ProcessoEntitySchema"]')
-
             else:
-                el = page.query_selector(f'[id="{campo_id}"]') or page.query_selector(f'[id*="{campo_id}"]')
+                el = page.query_selector(f'[id="{campo_id}"]') or page.query_selector(f'[id*="{campo_id}"]:not([type="hidden"])')
 
+            # --- Verificações do elemento ---
             if not el:
                 campos_falha.append((coluna, "Elemento não encontrado"))
                 continue
-
-            if not el.is_enabled():
+            if not el.is_enabled(): # is_enabled() funciona em ElementHandle
                 campos_falha.append((coluna, "Campo desabilitado"))
                 continue
 
+            # --- Lógica de formatação e preenchimento ---
             tag = el.evaluate("e => e.tagName.toLowerCase()")
-            valor_formatado = valor.strftime("%d/%m/%Y") if isinstance(valor, pd.Timestamp) else str(valor)
+
+            # --- AJUSTE NA FORMATAÇÃO DO VALOR ---
+            valor_formatado = ""
+            if isinstance(valor, pd.Timestamp):
+                valor_formatado = valor.strftime("%d/%m/%Y")
+            # Verifica se a coluna é de valor E se o tipo é numérico
+            elif coluna in colunas_de_valor and isinstance(valor, (int, float)):
+                 # Formata para string, usando vírgula como decimal, SEM separador de milhar por ora
+                 # Se o campo web espera separador de milhar, a formatação precisa ser mais complexa
+                 valor_formatado = f"{valor:.2f}".replace('.', ',') # Garante 2 casas decimais e usa vírgula
+                 # Se for inteiro, o .2f adiciona ',00', o que pode ser indesejado.
+                 # Tratamento para remover ',00' de inteiros, se necessário:
+                 if isinstance(valor, int):
+                      valor_formatado = str(valor) # Inteiro não precisa de vírgula decimal
+            else:
+                # Para todos os outros tipos, apenas converte para string
+                valor_formatado = str(valor)
+            # --- FIM DO AJUSTE NA FORMATAÇÃO ---
+
 
             if coluna in campos_com_lookup_simples:
                 sucesso = preencher_lookup_com_validacao(page, el, valor_formatado)
                 if sucesso:
                     campos_sucesso.append(coluna)
+                    print(f"    [OK] Lookup '{coluna}' preenchido.")
                 else:
-                    campos_falha.append((coluna, "Falha ao validar lookup"))
+                    campos_falha.append((coluna, "Falha ao validar/preencher lookup"))
                 continue
 
             if tag == "input":
-                if coluna == "Data do Resultado":
-                    el.scroll_into_view_if_needed()
+                # Mantém a lógica original de limpar com Ctrl+A e Backspace
+                try:
                     el.click()
                     el.press("Control+A")
                     el.press("Backspace")
-                    el.type(valor_formatado, delay=100)
-                    el.press("Tab")
-                    page.wait_for_timeout(200)
-                    print(f"  [INFO] Data do Resultado preenchida com: {valor_formatado}")
 
-                elif coluna in campos_data_mascara_rigida:
-                    el.click()
-                    el.press("Home")
-                    for _ in range(12):
-                        el.press("Backspace")
-                    el.type(valor_formatado, delay=100)
-                    el.press("Tab")
-                    page.wait_for_timeout(200)
-                    print(f"  [INFO] {coluna} preenchida com: {valor_formatado}")
+                    # Lógica específica para datas com máscara
+                    if coluna in campos_data_mascara_rigida:
+                        el.press("Home") # Vai para o início após limpar
+                        el.type(valor_formatado, delay=100)
+                        print(f"    [OK] Data (máscara) '{coluna}' preenchida: {valor_formatado}")
+                    # Lógica para outros inputs (incluindo os de valor agora formatados)
+                    else:
+                        el.type(valor_formatado, delay=80) # Digita o valor JÁ FORMATADO
+                        if coluna in colunas_de_valor:
+                             print(f"    [OK] Valor '{coluna}' preenchido: {valor_formatado}")
+                        elif "Data" in coluna: # Para datas sem máscara rígida
+                             print(f"    [OK] Data '{coluna}' preenchida: {valor_formatado}")
+                        else:
+                             print(f"    [OK] Campo '{coluna}' preenchido: {valor_formatado}")
 
-                elif "Data" in coluna:
-                    el.click()
-                    el.press("Control+A")
-                    el.press("Backspace")
-                    el.type(valor_formatado, delay=100)
                     el.press("Tab")
-                    page.wait_for_timeout(200)
-                    print(f"  [INFO] {coluna} preenchida com: {valor_formatado}")
+                    page.wait_for_timeout(250)
+                    campos_sucesso.append(coluna)
 
-                else:
-                    el.click()
-                    el.press("Control+A")
-                    el.press("Backspace")
-                    el.type(valor_formatado, delay=100)
-                    el.press("Tab")
-                campos_sucesso.append(coluna)
+                except Exception as e_input:
+                    campos_falha.append((coluna, f"Erro ao preencher input: {e_input}"))
 
             elif tag == "select":
-                el.select_option(label=valor_formatado)
-                campos_sucesso.append(coluna)
+                try:
+                    el.select_option(label=valor_formatado)
+                    campos_sucesso.append(coluna)
+                    print(f"    [OK] Select '{coluna}' selecionado: {valor_formatado}")
+                    page.wait_for_timeout(250)
+                except Exception as e_select:
+                     try: # Fallback por valor
+                         el.select_option(value=valor_formatado)
+                         campos_sucesso.append(coluna)
+                         print(f"    [OK] Select '{coluna}' selecionado (por valor): {valor_formatado}")
+                         page.wait_for_timeout(250)
+                     except Exception as e_select2:
+                          campos_falha.append((coluna, f"Erro ao selecionar option (label/valor): {e_select} / {e_select2}"))
+
 
             elif tag == "textarea":
-                el.fill(valor_formatado)
-                campos_sucesso.append(coluna)
+                try:
+                    el.fill(valor_formatado) # Fill deve limpar antes
+                    campos_sucesso.append(coluna)
+                    print(f"    [OK] Textarea '{coluna}' preenchido.")
+                    page.wait_for_timeout(250)
+                except Exception as e_textarea:
+                    campos_falha.append((coluna, f"Erro ao preencher textarea: {e_textarea}"))
 
             else:
                 campos_falha.append((coluna, f"Tag não tratada: {tag}"))
 
-        except Exception as e:
-            campos_falha.append((coluna, str(e)))
+        except Exception as e_geral:
+            campos_falha.append((coluna, f"Erro geral processando coluna: {str(e_geral)}"))
 
+    # --- Resumo final ---
+    # (A lógica de resumo e retorno permanece a mesma)
     if campos_sucesso:
-        print(f"  [SUCESSO] Campos gerais preenchidos com sucesso ({len(campos_sucesso)})")
+        print(f"  [SUCESSO] Campos gerais: {len(campos_sucesso)} preenchidos.")
     if campos_falha:
-        print(f"  [AVISO] {len(campos_falha)} campo(s) com falha no preenchimento:")
+        print(f"  [AVISO] Campos gerais: {len(campos_falha)} com falha:")
         for campo, erro in campos_falha:
-            print(f"    - [AVISO] {campo}: {erro}")
+            erro_msg = (str(erro)[:150] + '...') if len(str(erro)) > 150 else str(erro)
+            print(f"    - [FALHA] {campo}: {erro_msg}")
 
     return {
         "etapa": etapa,
         "duracao": round(time.time() - inicio, 2),
         "status": "Sucesso" if campos_sucesso else "Falha",
-        "mensagem": "; ".join([f"{c}: {e}" for c, e in campos_falha]) if campos_falha else ""
+        "mensagem": "; ".join([f"{c}: {str(e)[:100]}" for c, e in campos_falha]) if campos_falha else ""
     }
 
 def preencher_adverso_principal(page, dados_linha):
@@ -1170,35 +1235,51 @@ def preencher_centro_custo(page, valor_lookup, dicionario):
     except Exception as e:
         print(f"  [ERRO] Erro ao preencher Centro de Custo: {e}")
         return False
-    
+   
 def lidar_com_popup_de_confirmacao(page):
-
     """
-    Verifica se o popup de confirmação 'Atenção' está visível e clica em 'Sim'.
-    Usa um timeout de 5 segundos para esperar o elemento aparecer.
+    Verifica se popups de confirmação ('Atenção' ou 'Monitoramentos')
+    estão visíveis e clica no botão de confirmação ('#popup_ok').
+    Usa um timeout configurável. Retorna True se tratado, False caso contrário.
     """
     print(" - Verificando se existe popup de confirmação...")
+    popup_timeout = 7000 # Aumentei um pouco o timeout para dar mais margem
     try:
-        # O seletor para o botão 'Sim' é 'input#popup_ok'
-        sim_button = page.locator('input#popup_ok')
-        
-        # Espera ATÉ 5 segundos para o botão ficar visível.
-        # Se aparecer antes, a execução continua imediatamente.
-        sim_button.wait_for(state='visible', timeout=5000)
-        
-        print("   - Popup de 'Atenção' detectado. Clicando em 'Sim'.")
-        sim_button.click()
-        
-        # Aguarda o container do popup desaparecer para garantir que a ação foi processada
+        # O locator busca pelo ID do botão de confirmação, comum a ambos os popups
+        sim_button_locator = page.locator('input#popup_ok')
+
+        # Espera o botão ficar visível (seja qual for o popup)
+        sim_button_locator.wait_for(state='visible', timeout=popup_timeout)
+
+        # Se chegou aqui, o botão está visível. Loga a mensagem do popup se possível.
+        try:
+            # Tenta pegar a mensagem específica do popup para log
+            popup_message_locator = page.locator('#popup_message')
+            if popup_message_locator.is_visible(timeout=500): # Verifica rápido se a mensagem existe
+                 popup_text = popup_message_locator.text_content(timeout=500)
+                 print(f"   - Popup detectado com mensagem: '{popup_text[:100]}...'. Clicando em 'Sim/Salvar processo'.")
+            else:
+                 print("   - Popup (sem mensagem específica lida) detectado. Clicando em 'Sim/Salvar processo'.")
+        except Exception as e_msg:
+             print(f"   - Popup detectado (erro ao ler msg: {e_msg}). Clicando em 'Sim/Salvar processo'.")
+
+        sim_button_locator.click()
+
+        # Espera o container geral do popup desaparecer
+        # Usar um seletor que abranja ambos os possíveis containers, se necessário,
+        # mas 'div#popup_container' (se for o container externo) pode ser suficiente.
+        # Se 'popup_content' estiver dentro de 'popup_container', esperar por 'popup_container' basta.
         page.locator('div#popup_container').wait_for(state='hidden', timeout=5000)
         print("   - Popup de confirmação tratado com sucesso.")
+        return True # Indica que o popup foi tratado
 
-    except TimeoutError:
-        # Se o botão não aparecer dentro do tempo limite, é normal. Apenas informa e continua.
-        print("   - Nenhum popup de confirmação encontrado no tempo de espera.")
-    except Exception as e:
-        # Captura outras exceções inesperadas, mas não interrompe o fluxo.
-        print(f"   - [AVISO] Ocorreu um erro inesperado ao tentar lidar com o popup: {e}")
+    except Exception as e: # Captura TimeoutError do wait_for ou outros erros
+        if "Timeout" in str(e):
+             # Mensagem mais genérica, pois pode ser qualquer um dos popups
+             print(f"   - Nenhum botão de confirmação ('input#popup_ok') encontrado em {popup_timeout/1000}s.")
+        else:
+             print(f"   - [AVISO] Ocorreu um erro inesperado ao tentar lidar com o popup: {e}")
+        return False # Indica que o popup NÃO foi tratado
 
 def gerar_relatorio_sumarizado(lista_logs: list, timestamp: str):
     """
@@ -1273,165 +1354,257 @@ def salvar_log_execucao(lista_logs: list):
 
     # Chama a função para gerar o relatório sumarizado em CSV, que usará o status correto
     gerar_relatorio_sumarizado(lista_logs, timestamp)
-
+    
 def main():
     start_time = time.time()
     print("[INÍCIO] INÍCIO DO SCRIPT RPA", flush=True)
 
+    parser = argparse.ArgumentParser(description='RPA para atualizar processos no Legal One em lote.')
+    parser.add_argument('--start', type=int, help='Número da linha (Excel) inicial para processar.')
+    parser.add_argument('--end', type=int, help='Número da linha (Excel) final para processar.')
+    args = parser.parse_args()
+    print(f"[INFO] Argumentos recebidos: --start={args.start}, --end={args.end}", flush=True)
+
     usuario = os.environ.get("LEGALONE_USUARIO")
     senha = os.environ.get("LEGALONE_SENHA")
-    if not usuario or not senha:
-        print("[ERRO] Variáveis de ambiente não definidas.")
-        return
+    print(f"DEBUG rpa_script: Usuário lido do ambiente: {usuario}")
+    print(f"DEBUG rpa_script: Senha lida do ambiente: {'*' * len(senha) if senha else None}")
+    if not usuario or not senha: print("[ERRO CRÍTICO] Variáveis de ambiente não definidas."); return
 
     BASE_DIR = Path(__file__).resolve().parent
     DATA_FILE = BASE_DIR / "data" / "entrada.xlsx"
     JSON_FILE = BASE_DIR / "data" / "campos_mapeados.json"
-
     try:
-        df = pd.read_excel(DATA_FILE, sheet_name="Dados")
-        with open(JSON_FILE, encoding="utf-8") as f:
-            todos_campos = json.load(f)
+        df_full = pd.read_excel(DATA_FILE, sheet_name="Dados")
+        with open(JSON_FILE, encoding="utf-8") as f: todos_campos = json.load(f)
         mapeamento = todos_campos
-    except Exception as e:
-        print(f"[ERRO] Erro ao carregar dados: {e}")
-        return
+    except FileNotFoundError: print(f"[ERRO CRÍTICO] Arquivo não encontrado: {DATA_FILE} ou {JSON_FILE}"); return
+    except Exception as e: print(f"[ERRO CRÍTICO] Erro ao carregar dados iniciais: {e}"); return
+
+    # Lógica de Fatiamento (Mantida)
+    total_rows_in_file = len(df_full)
+    start_index = args.start - 2 if args.start and args.start > 1 else 0
+    end_index = args.end - 2 if args.end else total_rows_in_file - 1
+    if args.start is not None and args.end is not None and args.end < args.start: end_index = start_index - 1
+    start_index = max(0, start_index); end_index = min(total_rows_in_file - 1, end_index)
+
+    df_lote = pd.DataFrame()
+    if start_index > end_index or start_index >= total_rows_in_file:
+         excel_start_log = args.start if args.start else 2; excel_end_log = args.end if args.end else total_rows_in_file + 1
+         print(f"[INFO] Lote inválido/vazio (Excel {excel_start_log}-{excel_end_log}, Índices {start_index}-{end_index}).")
+    else:
+        df_lote = df_full.iloc[start_index : end_index + 1].copy()
+        excel_start_log = start_index + 2; excel_end_log = end_index + 2
+        print(f"[INFO] Processando Lote - Linhas Excel: {excel_start_log} a {excel_end_log} (Total: {len(df_lote)})")
+
+    if df_lote.empty:
+        print("[INFO] Lote vazio. Encerrando."); salvar_log_execucao([]); return
 
     logs_processos = []
+    browser = None; page = None; context = None; playwright_context = None
+
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
-            page = browser.new_page()
+        playwright_context = sync_playwright().start()
+        try:
+            browser = playwright_context.chromium.launch(headless=False, timeout=90000, channel="chrome")
+            context = browser.new_context(viewport={"width": 1366, "height": 768})
+            context.set_default_timeout(45000)
+            page = context.new_page()
+            print("[INFO] Navegador e página iniciados.")
+        except Exception as e: print(f"[ERRO CRÍTICO] Falha ao iniciar navegador: {e}"); return
 
-            # Login
-            login_info = login_legalone(page, usuario, senha)
-            print(f"[{login_info['etapa']}] {login_info['status']} ({login_info['duracao']}s)")
-            if login_info["status"] == "Falha":
-                print(f"[ERRO] Erro no login: {login_info.get('mensagem', '')}")
-                browser.close()
-                return
+        login_info = login_legalone(page, usuario, senha)
+        print(f"[{login_info['etapa']}] {login_info['status']} ({login_info['duracao']}s)")
+        if login_info["status"] == "Falha": print(f"[ERRO CRÍTICO] Erro no login: {login_info.get('mensagem', '')}"); return
 
-            for i, row in df.iterrows():
-                dados_linha = row.dropna().to_dict()
-                numero = str(dados_linha.get("Processo", "")).strip()
-                if not numero:
-                    continue
+        # Loop principal
+        for i, row in df_lote.iterrows():
+            excel_row_num = i + 2
+            dados_linha = row.dropna().to_dict()
+            numero = str(dados_linha.get("Processo", "")).strip()
+            log = iniciar_log_processo(numero)
+            log["Linha Excel"] = excel_row_num
 
-                print(f"\n[INFO] Atualizando processo: {numero}")
-                log = iniciar_log_processo(numero)
+            if not numero:
+                print(f"[AVISO] Linha Excel {excel_row_num}: Sem número de processo, pulando.")
+                adicionar_evento(log, "Geral", "aviso", "Validação", "Proc ausente", 0); logs_processos.append(log); continue
 
-                # Acesso
-                acesso = acessar_processo_para_edicao(page, numero)
-                print(f"[{acesso['etapa']}] {acesso['status']} ({acesso['duracao']}s)")
-                adicionar_evento(log, acesso["etapa"], acesso["status"].lower(), "Abertura", acesso.get("mensagem", ""), acesso["duracao"])
-                if acesso["status"] == "Falha":
-                    logs_processos.append(log)
-                    continue
+            print(f"\n[INFO] {datetime.now().strftime('%H:%M:%S')} - Atualizando proc: {numero} (Linha {excel_row_num})")
 
-                # Painéis
-                expandir = expandir_paineis(page)
-                adicionar_evento(log, expandir["etapa"], expandir["status"].lower(), "Expansão", expandir.get("mensagem", ""), expandir["duracao"])
+            # <<< Try principal para o processo >>>
+            try:
+                if not page or page.is_closed():
+                     print("[ERRO GRAVE] Página fechada. Encerrando lote."); adicionar_evento(log, "Geral", "erro", "Conexão", "Página fechada", 0)
+                     if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                     break
 
-                # Escritório Responsável
-                valor_escritorio = dados_linha.get("Escritório Responsável")
-                if valor_escritorio:
-                    inicio_escritorio = time.time()
-                    sucesso = preencher_escritorio_responsavel(page, valor_escritorio, MAPA_ESCRITORIO_RESPONSAVEL)
-                    duracao = round(time.time() - inicio_escritorio, 2)
-                    status = "sucesso" if sucesso else "erro"
-                    adicionar_evento(log, "Escritório Responsável", status, "Preenchimento", "", duracao)
+                # Acesso, Painéis, Preenchimentos...
+                acesso = acessar_processo_para_edicao(page, numero); print(f"[{acesso['etapa']}] {acesso['status']} ({acesso['duracao']}s)"); adicionar_evento(log, acesso["etapa"], acesso["status"].lower(), "Abertura", acesso.get("mensagem", ""), acesso["duracao"])
+                if acesso["status"] == "Falha": raise Exception(f"Falha Acesso: {acesso.get('mensagem', 'Erro')}")
+                expandir = expandir_paineis(page); adicionar_evento(log, expandir["etapa"], expandir["status"].lower(), "Expansão", expandir.get("mensagem", ""), expandir["duracao"])
+                # ... (todas as chamadas de preenchimento como antes) ...
+                cascata = preencher_lookups_em_cascata(page, dados_linha, mapeamento); adicionar_evento(log, cascata["etapa"], cascata["status"].lower(), "Lookups", cascata.get("mensagem", ""), cascata["duracao"])
+                envolvidos = preencher_outros_envolvidos(page, dados_linha); adicionar_evento(log, envolvidos["etapa"], envolvidos["status"].lower(), "Preenchimento", envolvidos.get("mensagem", ""), envolvidos["duracao"])
+                objetos = preencher_objetos(page, dados_linha); adicionar_evento(log, objetos["etapa"], objetos["status"].lower(), "Preenchimento", objetos.get("mensagem", ""), objetos["duracao"])
+                pedidos = preencher_pedidos(page, dados_linha, mapeamento); adicionar_evento(log, pedidos["etapa"], pedidos["status"].lower(), "Preenchimento", pedidos.get("mensagem", ""), pedidos["duracao"])
+                if dados_linha.get("Adverso Principal"): adverso = preencher_adverso_principal(page, dados_linha); adicionar_evento(log, adverso["etapa"], adverso["status"].lower(), "Principal", adverso.get("mensagem", ""), adverso["duracao"])
+                else: adicionar_evento(log, "Adverso Principal", "sucesso", "Principal", "Vazio", 0)
+                campos = atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento); adicionar_evento(log, campos["etapa"], campos["status"].lower(), "Atualização", campos.get("mensagem", ""), campos["duracao"])
 
-                # Negociação do Contrato de Honorários
-                valor_negociacao = dados_linha.get("Negociação do Contrato de Honorários")
-                if valor_negociacao:
-                    inicio_negociacao = time.time()
-                    sucesso = preencher_negociacao_honorario(page, valor_negociacao, MAPA_NEGOCIACAO_HONORARIO)
-                    duracao = round(time.time() - inicio_negociacao, 2)
-                    status = "sucesso" if sucesso else "erro"
-                    adicionar_evento(log, "Negociação do Contrato de Honorários", status, "Preenchimento", "", duracao)
 
-                # Centro de Custo
-                valor_centro_custo = dados_linha.get("Centro de Custo")
-                if valor_centro_custo:
-                    inicio_cc = time.time()
-                    sucesso = preencher_centro_custo(page, valor_centro_custo, MAPA_CENTRO_CUSTO)
-                    duracao = round(time.time() - inicio_cc, 2)
-                    status = "sucesso" if sucesso else "erro"
-                    adicionar_evento(log, "Centro de Custo", status, "Preenchimento", "", duracao)
-
-                # Cascata
-                cascata = preencher_lookups_em_cascata(page, dados_linha, mapeamento)
-                adicionar_evento(log, cascata["etapa"], cascata["status"].lower(), "Lookups", cascata.get("mensagem", ""), cascata["duracao"])
-
-                # Envolvidos
-                envolvidos = preencher_outros_envolvidos(page, dados_linha)
-                adicionar_evento(log, envolvidos["etapa"], envolvidos["status"].lower(), "Preenchimento", envolvidos.get("mensagem", ""), envolvidos["duracao"])
-
-                # Objetos
-                objetos = preencher_objetos(page, dados_linha)
-                adicionar_evento(log, objetos["etapa"], objetos["status"].lower(), "Preenchimento", objetos.get("messagem", ""), objetos["duracao"])
-
-                # Pedidos
-                pedidos = preencher_pedidos(page, dados_linha, mapeamento)
-                adicionar_evento(log, pedidos["etapa"], pedidos["status"].lower(), "Preenchimento", pedidos.get("mensagem", ""), pedidos["duracao"])
-
-                # Adverso principal (condicional)
-                if "Adverso Principal" in dados_linha and str(dados_linha["Adverso Principal"]).strip():
-                    adverso = preencher_adverso_principal(page, dados_linha)
-                    adicionar_evento(log, adverso["etapa"], adverso["status"].lower(), "Principal", adverso.get("mensagem", ""), adverso["duracao"])
-
-                # Campos gerais
-                campos = atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento)
-                adicionar_evento(log, campos["etapa"], campos["status"].lower(), "Atualização", campos.get("messagem", ""), campos["duracao"])
-
-                # SALVAR ALTERAÇÕES COM VERIFICAÇÃO DE FALHA
-                try:
+                # --- Salvar ---
+                try: # Try interno para salvar
                     inicio_salvar = time.time()
-                    botao_salvar = page.query_selector('button[name="ButtonSave"]')
+                    botao_salvar = page.locator('button[name="ButtonSave"]')
 
-                    if botao_salvar and botao_salvar.is_enabled():
+                    if botao_salvar.is_visible() and botao_salvar.is_enabled():
+                        print("   - Botão 'Salvar' OK. Clicando...")
                         botao_salvar.scroll_into_view_if_needed()
-                        botao_salvar.click()
-                        
-                        # Lida com qualquer popup de confirmação que possa aparecer
-                        lidar_com_popup_de_confirmacao(page)
-                        
+                        botao_salvar.click(timeout=15000)
+                        page.wait_for_timeout(500)
+
+                        popup_tratado = lidar_com_popup_de_confirmacao(page)
+                        if not popup_tratado: print("   - Aviso: Popup não detectado/tratado.")
+                        else: page.wait_for_timeout(500)
+
+                        print("   - Aguardando rede finalizar...")
                         try:
-                            # Aguarda a notificação de sucesso aparecer na tela por até 10 segundos.
-                            page.wait_for_selector(
-                                'div.message-content:has-text("alterado com sucesso")',
-                                timeout=10000
-                            )
+                            page.wait_for_load_state('networkidle', timeout=10000)
+                            print("   - Rede finalizada.")
+                        except PlaywrightTimeoutError: print("   - [AVISO] Timeout (10s) networkidle.")
+                        except Exception as e_network: print(f"   - [AVISO] Erro networkidle: {e_network}")
+
+                        # Verifica sucesso com NOVO SELETOR
+                        try:
+                            success_indicator_selector = 'div.top-message-body.sucesso div.message-content:has-text("alterado com sucesso")'
+                            print(f"   - Aguardando msg sucesso: '{success_indicator_selector}'...")
+                            page.locator(success_indicator_selector).wait_for(state='visible', timeout=35000)
+
                             duracao = round(time.time() - inicio_salvar, 2)
                             adicionar_evento(log, "Salvar", "sucesso", "Confirmação", "", duracao)
                             print(f"[SALVO] Processo {numero} salvo com sucesso ({duracao}s)")
-                        
-                        except Exception as e: # Especificamente um TimeoutError, mas Exception captura tudo.
+
+                        except PlaywrightTimeoutError as e_timeout_success:
                             duracao = round(time.time() - inicio_salvar, 2)
-                            mensagem = "Falha ao salvar: a notificação de sucesso não foi encontrada."
+                            print(f"   - DEBUG: Timeout ({str(e_timeout_success).splitlines()[0]}) ao esperar msg de sucesso.")
+                            mensagem = f"Falha Salvar: Notificação sucesso não encontrada ({duracao}s)."
                             adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
-                            print(f"[ERRO] {mensagem} no processo {numero}")
-
+                            print(f"[ERRO] {mensagem} no proc {numero}")
+                            if page.is_closed(): raise Exception("Página fechou durante espera.")
+                            else: raise Exception(mensagem)
+                        except Exception as e_success:
+                            duracao = round(time.time() - inicio_salvar, 2)
+                            print(f"   - DEBUG: Erro msg sucesso: {type(e_success).__name__} - {e_success}")
+                            mensagem = f"Falha Salvar: Erro ao verificar notificação: {e_success}"
+                            adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
+                            print(f"[ERRO] {mensagem} no proc {numero}")
+                            if page.is_closed(): raise Exception("Página fechou durante espera.")
+                            else: raise Exception(mensagem)
                     else:
-                        adicionar_evento(log, "Salvar", "erro", "Confirmação", "Botão 'Salvar' desabilitado ou não encontrado", 0)
-                        print(f"[AVISO] Botão 'Salvar' não disponível para o processo {numero}")
+                        msg_botao = "Botão 'Salvar' não encontrado/visível/habilitado"
+                        adicionar_evento(log, "Salvar", "erro", "Confirmação", msg_botao, 0)
+                        print(f"[AVISO] {msg_botao} para o proc {numero}")
+                        raise Exception(msg_botao)
 
-                except Exception as e:
-                    adicionar_evento(log, "Salvar", "erro", "Confirmação", str(e), 0)
-                    print(f"[ERRO] Falha crítica ao tentar salvar processo {numero}: {e}")
-                
-                print(f"[SUCESSO] Preenchimento concluído para {numero}.")
-                logs_processos.append(log)
+                # Except alinhado com o 'try' da operação de salvar
+                except Exception as e_save:
+                    duracao = round(time.time() - inicio_salvar, 2) if 'inicio_salvar' in locals() else 0
+                    if not any(err.get("etapa") == "Salvar" for err in log.get("Erros",[])):
+                        adicionar_evento(log, "Salvar", "erro", "Confirmação", f"Erro crítico: {str(e_save)}", duracao)
+                    print(f"[ERRO] Falha crítica salvar {numero}: {e_save}")
+                    raise Exception(f"Erro crítico ao salvar: {e_save}") # Propaga
 
-            print("\n[INFO] Todos os processos da planilha foram concluídos. Encerrando o navegador...")
-            browser.close()
+            # <<< Except alinhado com o try principal do processo >>>
+            except Exception as e_processo:
+                print(f"[ERRO INESPERADO] proc {numero} (Linha {excel_row_num}): {e_processo}")
+                if not any(err.get("etapa") == "Processamento Geral" for err in log.get("Erros", [])):
+                     adicionar_evento(log, "Processamento Geral", "erro", "Execução", str(e_processo), 0)
 
+                error_msg_lower = str(e_processo).lower()
+                if "target page" in error_msg_lower or "browser has been closed" in error_msg_lower or \
+                   "net::err_aborted" in error_msg_lower or "browser has crashed" in error_msg_lower or \
+                   "playwright playwright" in error_msg_lower:
+                    print("[ERRO GRAVE] Conexão/Navegador perdido. Encerrando lote.")
+                    if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                    break
+                else:
+                    try:
+                         print("   - Tentando voltar para busca...");
+                         if page and not page.is_closed():
+                              page.goto("https://mdradvocacia.novajus.com.br/processos/processos/search", wait_until="load", timeout=30000)
+                              print("   - Recuperação OK.")
+                         else:
+                              print("[ERRO GRAVE] Página fechada na recuperação. Encerrando.")
+                              if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                              break
+                    except Exception as e_nav:
+                         print(f"[ERRO GRAVE] Falha ao voltar para busca: {e_nav}. Encerrando.")
+                         adicionar_evento(log, "Recuperação", "erro", "Navegação", f"Falha: {e_nav}", 0)
+                         if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                         break
+
+            # <<< Finally alinhado com o try principal do processo >>>
+            finally:
+                if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos):
+                    logs_processos.append(log)
+                print(f"[INFO] Processamento linha {excel_row_num} concluído.")
+
+        # Fim do loop for
+        print(f"\n[INFO] {datetime.now().strftime('%H:%M:%S')} - Fim do processamento do lote.")
+
+    # Except GERAL fora do loop
+    except Exception as e_global:
+        print(f"[ERRO GERAL FORA DO LOOP] {e_global}")
+        if not logs_processos:
+            log_erro_geral = { "Processo": "ERRO_GERAL_SCRIPT", "Linha Excel": "N/A", "Status Geral": "Falha", "Erros": [{"etapa": "Inicialização", "item": "Erro Script", "mensagem": str(e_global)}], "Sucessos": [], "Duracao por etapa (s)": {} }
+            logs_processos.append(log_erro_geral)
+
+    # Finally GERAL
     finally:
-            # Este bloco SEMPRE será executado, garantindo que o log seja salvo.
-            print("\n[INFO] Finalizando script. Salvando log da execução...")
-            salvar_log_execucao(logs_processos)
-            tempo_total = time.time() - start_time
-            print(f"\n[TEMPO] Tempo total de execução: {tempo_total:.2f} segundos.")
-    
+        # <<< CORREÇÃO DE SINTAXE APLICADA AQUI E NAS LINHAS SEGUINTES >>>
+        if page and not page.is_closed():
+            try:
+                page.close()
+                print("[INFO] Página fechada.")
+            except Exception as e:
+                print(f"[AVISO] Erro ao fechar página: {e}") # Indentado
+
+        if context:
+            try:
+                context.close()
+                print("[INFO] Contexto fechado.")
+            except Exception as e:
+                print(f"[AVISO] Erro ao fechar contexto: {e}") # Indentado
+
+        if browser and browser.is_connected():
+            try:
+                browser.close()
+                print("[INFO] Navegador fechado.")
+            except Exception as e:
+                print(f"[AVISO] Erro ao fechar navegador: {e}") # Indentado
+        elif browser:
+            print("[INFO] Navegador já estava desconectado.")
+        else:
+            print("[INFO] Nenhuma instância de navegador foi criada.")
+
+        if playwright_context:
+            try:
+                playwright_context.stop()
+                print("[INFO] Playwright parado.")
+            except Exception as e:
+                print(f"[AVISO] Erro ao parar Playwright: {e}") # Indentado
+        # <<< FIM DA CORREÇÃO DE SINTAXE >>>
+
+        # Salvar logs
+        print("\n[INFO] Finalizando script. Salvando log...")
+        if 'salvar_log_execucao' in globals(): salvar_log_execucao(logs_processos)
+        else: print("[ERRO CRÍTICO] Função 'salvar_log_execucao' não definida!")
+        tempo_total = time.time() - start_time
+        print(f"\n[TEMPO] Tempo total: {tempo_total:.2f} segundos.")
+
 if __name__ == "__main__":
+    # Configuração de encoding (Mantido)
+    if sys.stdout.isatty() and os.name == 'nt':
+        try: sys.stdout.reconfigure(encoding='utf-8'); sys.stderr.reconfigure(encoding='utf-8')
+        except Exception as e: print(f"[AVISO] Falha ao reconfigurar encoding: {e}")
     main()

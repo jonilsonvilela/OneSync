@@ -1,0 +1,16 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;83.26;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0662042-84.2019.8.04.0001;Falha;90.89;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0800886-97.2023.8.20.5119;Falha;77.55;Salvar;"Falha ao salvar/confirmar: Page.wait_for_selector: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator(""div.message-content:has-text(\""alterado com sucesso\""), #Search"") to be visible
+"
+0800586-05.2024.8.14.0064;Falha;80.53;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+7002051-60.2025.8.22.0013;Falha;126.14;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0800330-30.2020.8.14.0023;Falha;91.39;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0002915-59.2013.8.14.0015;Falha;82.78;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0000005-96.2004.8.14.0009;Falha;88.27;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0842604-82.2019.8.14.0301;Falha;2.48;Processamento Geral;"Falha na etapa de Acesso: Page.goto: net::ERR_ABORTED at https://mdradvocacia.novajus.com.br/processos/processos/search
+Call log:
+  - navigating to ""https://mdradvocacia.novajus.com.br/processos/processos/search"", waiting until ""load""
+"

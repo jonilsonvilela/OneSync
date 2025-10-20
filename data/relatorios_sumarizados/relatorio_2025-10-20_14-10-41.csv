@@ -1,0 +1,7 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;46.23;Processamento Geral;"Falha na etapa de Acesso: Locator.press: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(""input#Search"")
+    - locator resolved to <input value="""" id=""Search"" type=""text"" name=""Search"" autocomplete=""off"" placeholder=""Pesquisar em processos pelos campos: pasta, negociação do contrato de honorário, envolvidos e números""/>
+  - elementHandle.press(""Enter"")
+"

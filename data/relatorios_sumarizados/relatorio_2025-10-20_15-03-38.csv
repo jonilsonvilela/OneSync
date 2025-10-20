@@ -1,0 +1,4 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;46.06;Salvar;Erro crítico durante clique/salvamento: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0662042-84.2019.8.04.0001;Falha;44.09;Salvar;Erro crítico durante clique/salvamento: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0800886-97.2023.8.20.5119;Falha;16.07;Centro de Custo;Falha no preenchimento

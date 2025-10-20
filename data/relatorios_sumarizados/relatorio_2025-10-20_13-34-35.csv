@@ -1,0 +1,7 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;8.34;Processamento Geral;"Falha na etapa de Acesso: Locator.fill: Target page, context or browser has been closed
+Call log:
+  - waiting for locator(""input#Search"")
+    - waiting for"" https://signon.thomsonreuters.com/?productId=L1NJ&returnto=https%3a%2f%2flogin.novajus.com.br%2fOnePass%2fLoginOnePass%2f%3freturnUrl%3dhttps%253a%252f%252fmdradvocacia.novajus.com.br%252fprocessos%2…"" navigation to finish...
+    - navigated to ""https://signon.thomsonreuters.com/?productId=L1NJ&returnto=https%3a%2f%2flogin.novajus.com.br%2fOnePass%2fLoginOnePass%2f%3freturnUrl%3dhttps%253a%252f%252fmdradvocacia.novajus.com.br%252fprocessos%2…""
+"

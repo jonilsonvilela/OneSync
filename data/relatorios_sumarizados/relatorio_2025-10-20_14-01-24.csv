@@ -1,0 +1,6 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;47.39;Salvar;Falha ao salvar/confirmar: Frame.is_visible() got an unexpected keyword argument 'timeout'
+0662042-84.2019.8.04.0001;Falha;0.56;Processamento Geral;"Falha na etapa de Acesso: Page.goto: net::ERR_ABORTED at https://mdradvocacia.novajus.com.br/processos/processos/search
+Call log:
+  - navigating to ""https://mdradvocacia.novajus.com.br/processos/processos/search"", waiting until ""load""
+"

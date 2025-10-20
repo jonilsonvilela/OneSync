@@ -43,16 +43,53 @@
     </template>
   </div>
 
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <label for="start_row" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Linha Inicial (Excel):</label>
+      <input type="number" name="start_row" id="start_row" min="2" placeholder="Ex: 2"
+             class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+      <p class="text-xs text-gray-500 mt-1">Primeira linha de dados a processar (a linha 2 do Excel é a primeira linha de dados). Deixe em branco para começar do início.</p>
+    </div>
+    <div>
+      <label for="end_row" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Linha Final (Excel):</label>
+      <input type="number" name="end_row" id="end_row" min="2" placeholder="Ex: 101"
+             class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+      <p class="text-xs text-gray-500 mt-1">Última linha de dados a processar (inclusive). Deixe em branco para ir até o final.</p>
+    </div>
+  </div>
   <div class="flex justify-between items-center">
     <button type="submit"
             class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition">
       📤 Enviar Arquivo
     </button>
 
-    <a href="{{ url_for('executar_rpa') }}"
+    <a href="#" id="executar-btn"
+       onclick="executarComLote(event)"
        class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
-      ▶️ Executar Atualização
+      ▶️ Executar Lote Selecionado
     </a>
   </div>
 </form>
+
+<script>
+  function executarComLote(event) {
+    event.preventDefault(); // Impede a navegação padrão do link
+    const startRow = document.getElementById('start_row').value;
+    const endRow = document.getElementById('end_row').value;
+    
+    // Constrói a URL com os parâmetros
+    let url = "{{ url_for('executar_rpa') }}";
+    const params = new URLSearchParams();
+    if (startRow) params.append('start', startRow);
+    if (endRow) params.append('end', endRow);
+    
+    if (params.toString()) {
+      url += '?' + params.toString();
+    }
+    
+    // Redireciona para a URL de execução com os parâmetros
+    window.location.href = url;
+  }
+</script>
+
 {% endblock %}

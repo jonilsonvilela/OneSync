@@ -1,0 +1,2 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0805277-49.2023.8.14.0015;Falha;40.94;Salvar;Erro crítico durante clique/salvamento: Frame.is_visible() got an unexpected keyword argument 'timeout'
