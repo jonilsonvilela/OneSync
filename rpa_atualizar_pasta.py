@@ -7,6 +7,7 @@ import os
 import time
 import sys
 import argparse
+import re
 
 # Altera a codificação APENAS se estiver rodando em um terminal interativo no Windows
 if sys.stdout.isatty() and os.name == 'nt':
@@ -356,7 +357,6 @@ def preencher_lookups_em_cascata(page, dados_linha, mapeamento):
             "mensagem": "; ".join(mensagens_erro) if mensagens_erro else "Nenhum campo da cascata precisou ser preenchido."
         }
 
-    
 def preencher_outros_envolvidos(page, dados_linha):
     """PREENCHIMENTO DOS ENVOLVIDOS"""
     import time
@@ -1283,7 +1283,8 @@ def lidar_com_popup_de_confirmacao(page):
 
 def gerar_relatorio_sumarizado(lista_logs: list, timestamp: str):
     """
-    Cria um relatório sumarizado em CSV a partir da lista de logs.
+    Cria um relatório sumarizado em CSV, priorizando o erro mais relevante
+    e incluindo a Linha Excel.
     """
     print("[INFO] Gerando relatório sumarizado em CSV...")
     if not lista_logs:
@@ -1296,15 +1297,35 @@ def gerar_relatorio_sumarizado(lista_logs: list, timestamp: str):
         status = log.get("Status Geral", "Indefinido")
         duracao_total = sum(log.get("Duracao por etapa (s)", {}).values())
         
+        # --- INÍCIO DA MODIFICAÇÃO DE LÓGICA DE ERRO ---
         etapa_falha = ""
         mensagem_erro = ""
-
+        
         if status == "Falha" and log.get("Erros"):
-            primeiro_erro = log["Erros"][0]
-            etapa_falha = primeiro_erro.get("etapa", "N/A")
-            mensagem_erro = primeiro_erro.get("mensagem", "Sem detalhes")
+            lista_erros = log.get("Erros", [])
+            
+            # 1. Procura por um erro específico da etapa "Salvar" (nossa regra de negócio)
+            erro_salvar = next((err for err in lista_erros if err.get("etapa") == "Salvar"), None)
+            
+            if erro_salvar:
+                # Prioridade 1: O erro de "Salvar"
+                etapa_falha = erro_salvar.get("etapa", "Salvar")
+                mensagem_erro = erro_salvar.get("mensagem", "Erro ao salvar")
+            else:
+                # Prioridade 2: O último erro que ocorreu no processo
+                ultimo_erro = lista_erros[-1]
+                etapa_falha = ultimo_erro.get("etapa", "N/A")
+                mensagem_erro = ultimo_erro.get("mensagem", "Sem detalhes")
+        
+        elif status == "Falha":
+            # Caso raro: Status é Falha (porque não salvou), mas a lista de Erros está vazia
+            etapa_falha = "Salvar"
+            mensagem_erro = "Processo não foi salvo (etapa 'Salvar' não registrou 'sucesso'), mas nenhum erro específico foi capturado."
+            
+        # --- FIM DA MODIFICAÇÃO ---
 
         dados_relatorio.append({
+            "Linha_Excel": log.get("Linha Excel", "N/A"), # <-- INCLUSÃO DA LINHA EXCEL
             "Processo": processo,
             "Status": status,
             "Duracao_Total_s": round(duracao_total, 2),
@@ -1319,14 +1340,79 @@ def gerar_relatorio_sumarizado(lista_logs: list, timestamp: str):
 
     # Cria e salva o DataFrame
     df_relatorio = pd.DataFrame(dados_relatorio)
+    
+    # Reordenando colunas para a Linha Excel vir primeiro
+    colunas_ordenadas = ["Linha_Excel", "Processo", "Status", "Duracao_Total_s", "Etapa_Falha", "Mensagem_Erro"]
+    df_relatorio = df_relatorio[colunas_ordenadas]
+    
     df_relatorio.to_csv(caminho_csv, index=False, sep=';', encoding='utf-8-sig')
     
     print(f"[RELATÓRIO] Relatório sumarizado salvo em: {caminho_csv}")
 
-def salvar_log_execucao(lista_logs: list):
+def gerar_arquivo_reprocessamento(lista_logs: list, df_original: pd.DataFrame, timestamp: str):
     """
-    Salva o log detalhado em JSON e chama a função para gerar o relatório sumarizado.
-    O Status Geral é definido EXCLUSIVAMENTE pelo sucesso da etapa 'Salvar'.
+    Filtra o DataFrame original e salva um novo arquivo Excel
+    apenas com as linhas que falharam, prontas para reprocessar.
+    
+    Argumentos:
+        lista_logs (list): A lista completa de logs de processo.
+        df_original (pd.DataFrame): O DataFrame carregado do 'entrada.xlsx' original.
+        timestamp (str): A data/hora formatada para nomear o arquivo.
+    """
+    print("[INFO] Gerando arquivo de reprocessamento...")
+    
+    # 1. Pega a "Linha Excel" de todos os logs que falharam
+    linhas_falhas = [
+        log.get("Linha Excel") 
+        for log in lista_logs 
+        if log.get("Status Geral") == "Falha" and log.get("Linha Excel")
+    ]
+    
+    if not linhas_falhas:
+        print("[INFO] Nenhum processo falhou. Arquivo de reprocessamento não gerado.")
+        return
+
+    # 2. Converte números de linha (base 1, ex: 10) para índices do DataFrame (base 0, ex: 8)
+    #    Como seu log usa 'excel_row_num = i + 2', o índice pandas (i) é 'excel_row_num - 2'
+    #    Filtramos índices que podem estar fora dos limites do df_original
+    max_index = len(df_original) - 1
+    indices_falhos = [
+        idx for idx in (linha - 2 for linha in linhas_falhas) 
+        if 0 <= idx <= max_index
+    ]
+
+    if not indices_falhos:
+        print("[AVISO] Falhas encontradas no log, mas índices de linha não correspondem ao DataFrame original.")
+        return
+
+    # 3. Filtra o DataFrame original para pegar apenas as linhas que falharam
+    df_falhas = df_original.iloc[indices_falhos].copy()
+    
+    # 4. Define o caminho da pasta
+    pasta_reprocessamento = Path(__file__).resolve().parent / "data" / "reprocessamento"
+    pasta_reprocessamento.mkdir(parents=True, exist_ok=True)
+    caminho_excel = pasta_reprocessamento / f"falhas_{timestamp}.xlsx"
+    
+    # 5. Salva o novo arquivo Excel
+    #    É crucial salvar na aba "Dados", pois é a aba que o 'main' lê.
+    try:
+        with pd.ExcelWriter(caminho_excel, engine='openpyxl') as writer:
+            df_falhas.to_excel(writer, sheet_name='Dados', index=False)
+            
+        print(f"[REPROCESSAR] Arquivo com {len(df_falhas)} falhas salvo em: {caminho_excel}")
+        print(f"[AÇÃO] Para reprocessar: Renomeie '{caminho_excel.name}' para 'entrada.xlsx' e mova para a pasta 'data'.")
+
+    except Exception as e:
+        print(f"[ERRO] Falha ao gerar arquivo de reprocessamento: {e}")
+
+def salvar_log_execucao(lista_logs: list, df_original: pd.DataFrame):
+    """
+    Salva o log detalhado em JSON, chama o relatório sumarizado
+    e gera o arquivo de reprocessamento.
+    
+    Argumentos:
+        lista_logs (list): A lista de logs da execução.
+        df_original (pd.DataFrame): O DataFrame completo do 'entrada.xlsx'.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     pasta_logs = Path(__file__).resolve().parent / "data" / "logs_execucao"
@@ -1334,9 +1420,8 @@ def salvar_log_execucao(lista_logs: list):
     caminho_json = pasta_logs / f"log_{timestamp}.json"
 
     # Atualiza status geral com base na regra de negócio final
+    # (Sua lógica original está perfeita)
     for log in lista_logs:
-        # Procura por um evento de sucesso específico da etapa 'Salvar'
-        # Esta é a única condição que define o sucesso de um processo.
         sucesso_ao_salvar = any(
             evento.get("etapa") == "Salvar" 
             for evento in log.get("Sucessos", [])
@@ -1352,9 +1437,16 @@ def salvar_log_execucao(lista_logs: list):
         json.dump(lista_logs, f, ensure_ascii=False, indent=2)
     print(f"[LOG] Log detalhado da execução salvo em: {caminho_json}")
 
-    # Chama a função para gerar o relatório sumarizado em CSV, que usará o status correto
+    # Chama a função para gerar o relatório sumarizado em CSV
+    # (Esta função já deve estar atualizada conforme o Passo 1)
     gerar_relatorio_sumarizado(lista_logs, timestamp)
     
+    # --- INCLUSÃO (Passo 3) ---
+    # Chama a nova função para gerar o arquivo Excel de reprocessamento
+    # (Esta função já deve estar definida conforme o Passo 2)
+    gerar_arquivo_reprocessamento(lista_logs, df_original, timestamp)
+    # --- FIM DA INCLUSÃO ---
+
 def main():
     start_time = time.time()
     print("[INÍCIO] INÍCIO DO SCRIPT RPA", flush=True)
@@ -1434,15 +1526,14 @@ def main():
             # <<< Try principal para o processo >>>
             try:
                 if not page or page.is_closed():
-                     print("[ERRO GRAVE] Página fechada. Encerrando lote."); adicionar_evento(log, "Geral", "erro", "Conexão", "Página fechada", 0)
-                     if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
-                     break
+                    print("[ERRO GRAVE] Página fechada. Encerrando lote."); adicionar_evento(log, "Geral", "erro", "Conexão", "Página fechada", 0)
+                    if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                    break
 
                 # Acesso, Painéis, Preenchimentos...
                 acesso = acessar_processo_para_edicao(page, numero); print(f"[{acesso['etapa']}] {acesso['status']} ({acesso['duracao']}s)"); adicionar_evento(log, acesso["etapa"], acesso["status"].lower(), "Abertura", acesso.get("mensagem", ""), acesso["duracao"])
                 if acesso["status"] == "Falha": raise Exception(f"Falha Acesso: {acesso.get('mensagem', 'Erro')}")
                 expandir = expandir_paineis(page); adicionar_evento(log, expandir["etapa"], expandir["status"].lower(), "Expansão", expandir.get("mensagem", ""), expandir["duracao"])
-                # ... (todas as chamadas de preenchimento como antes) ...
                 cascata = preencher_lookups_em_cascata(page, dados_linha, mapeamento); adicionar_evento(log, cascata["etapa"], cascata["status"].lower(), "Lookups", cascata.get("mensagem", ""), cascata["duracao"])
                 envolvidos = preencher_outros_envolvidos(page, dados_linha); adicionar_evento(log, envolvidos["etapa"], envolvidos["status"].lower(), "Preenchimento", envolvidos.get("mensagem", ""), envolvidos["duracao"])
                 objetos = preencher_objetos(page, dados_linha); adicionar_evento(log, objetos["etapa"], objetos["status"].lower(), "Preenchimento", objetos.get("mensagem", ""), objetos["duracao"])
@@ -1451,55 +1542,158 @@ def main():
                 else: adicionar_evento(log, "Adverso Principal", "sucesso", "Principal", "Vazio", 0)
                 campos = atualizar_campos_usando_mapeamento(page, dados_linha, mapeamento); adicionar_evento(log, campos["etapa"], campos["status"].lower(), "Atualização", campos.get("mensagem", ""), campos["duracao"])
 
+                
+                # --- INCLUSÃO DA FUNÇÃO (EXATAMENTE COMO PEDIDO) ---
+                inicio_negociacao = time.time()
+                
+                # Assumindo que a coluna no Excel se chama 'Negociacao Honorario'
+                # (Se o nome da coluna for outro, troque a string "Negociacao Honorario" abaixo)
+                valor_negociacao = dados_linha.get("Negociação do Contrato de Honorários")
+                
+                if valor_negociacao:
+                    # Chama a função exatamente como foi definida (ela deve estar no escopo global)
+                    # O MAPA_NEGOCIACAO_HONORARIO também deve estar no escopo global
+                    sucesso_negociacao = preencher_negociacao_honorario(page, valor_negociacao, MAPA_NEGOCIACAO_HONORARIO)
+                    
+                    # Log manual baseado no retorno booleano da sua função
+                    duracao_negociacao = round(time.time() - inicio_negociacao, 2)
+                    if sucesso_negociacao:
+                        adicionar_evento(log, "Negociação Honorário", "sucesso", "Preenchimento", "", duracao_negociacao)
+                    else:
+                        # A própria função já loga o erro no console, aqui logamos no log JSON
+                        adicionar_evento(log, "Negociação Honorário", "erro", "Preenchimento", f"Falha ao preencher '{valor_negociacao}'", duracao_negociacao)
+                else:
+                    # Se não houver valor na planilha, loga como 'vazio'
+                    adicionar_evento(log, "Negociação Honorário", "sucesso", "Preenchimento", "Vazio", 0)
+                # --- FIM DA INCLUSÃO ---
 
-                # --- Salvar ---
+                # --- INCLUSÃO CENTRO DE CUSTO ---
+                inicio_centro_custo = time.time()
+                
+                # Pega o valor da coluna 'Centro de Custo' (conforme você informou)
+                valor_centro_custo = dados_linha.get("Centro de Custo")
+                
+                if valor_centro_custo:
+                    # ATENÇÃO: Assumindo que seu mapa global se chama 'MAPA_CENTRO_CUSTO'
+                    # (Se o nome for outro, ajuste a variável aqui)
+                    sucesso_cc = preencher_centro_custo(page, valor_centro_custo, MAPA_CENTRO_CUSTO)
+                    
+                    # Log manual baseado no retorno booleano da sua função
+                    duracao_cc = round(time.time() - inicio_centro_custo, 2)
+                    if sucesso_cc:
+                        adicionar_evento(log, "Centro de Custo", "sucesso", "Preenchimento", "", duracao_cc)
+                    else:
+                        adicionar_evento(log, "Centro de Custo", "erro", "Preenchimento", f"Falha ao preencher '{valor_centro_custo}'", duracao_cc)
+                else:
+                    # Se não houver valor na planilha, loga como 'vazio'
+                    adicionar_evento(log, "Centro de Custo", "sucesso", "Preenchimento", "Vazio", 0)
+                # --- FIM DA INCLUSÃO ---
+
+                
+                # --- Salvar (BLOCO NOVO E CORRIGIDO COM LOOP) ---
                 try: # Try interno para salvar
                     inicio_salvar = time.time()
                     botao_salvar = page.locator('button[name="ButtonSave"]')
 
                     if botao_salvar.is_visible() and botao_salvar.is_enabled():
-                        print("   - Botão 'Salvar' OK. Clicando...")
+                        print("     - Botão 'Salvar' OK. Clicando...")
                         botao_salvar.scroll_into_view_if_needed()
                         botao_salvar.click(timeout=15000)
-                        page.wait_for_timeout(500)
 
-                        popup_tratado = lidar_com_popup_de_confirmacao(page)
-                        if not popup_tratado: print("   - Aviso: Popup não detectado/tratado.")
-                        else: page.wait_for_timeout(500)
+                        # --- INÍCIO DA MODIFICAÇÃO (LÓGICA DE LOOP) ---
+                        
+                        try: # Try interno para o loop de espera
+                            print("     - Aguardando eventos pós-salvamento (popup OU sucesso)...")
 
-                        print("   - Aguardando rede finalizar...")
-                        try:
-                            page.wait_for_load_state('networkidle', timeout=10000)
-                            print("   - Rede finalizada.")
-                        except PlaywrightTimeoutError: print("   - [AVISO] Timeout (10s) networkidle.")
-                        except Exception as e_network: print(f"   - [AVISO] Erro networkidle: {e_network}")
+                            # 1. Definimos os localizadores para os DOIS possíveis eventos
+                            popup_locator = page.locator('input#popup_ok')
+                            
+                            success_regex = re.compile(r"alterado com sucesso\.", re.IGNORECASE)
+                            success_locator = page.locator('div.top-message-body.sucesso div.message-content').filter(has_text=success_regex)
 
-                        # Verifica sucesso com NOVO SELETOR
-                        try:
-                            success_indicator_selector = 'div.top-message-body.sucesso div.message-content:has-text("alterado com sucesso")'
-                            print(f"   - Aguardando msg sucesso: '{success_indicator_selector}'...")
-                            page.locator(success_indicator_selector).wait_for(state='visible', timeout=35000)
+                            # 2. Criamos um localizador "OU" (OR)
+                            combined_locator = popup_locator.or_(success_locator)
 
+                            # 3. Definimos um timeout TOTAL para toda a operação de salvar
+                            max_save_time_ms = 35000  # 35 segundos no total
+                            start_wait_time = time.time()
+
+                            # 4. INICIAMOS O LOOP
+                            while True:
+                                # 4.1. Verificamos se o tempo total estourou
+                                elapsed_ms = (time.time() - start_wait_time) * 1000
+                                if elapsed_ms >= max_save_time_ms:
+                                    raise PlaywrightTimeoutError(f"Timeout total de {max_save_time_ms}ms excedido esperando por popups ou sucesso.")
+                                
+                                # 4.2. Calculamos o tempo restante para esta iteração
+                                remaining_timeout = max_save_time_ms - elapsed_ms
+
+                                # 5. Esperamos pelo próximo evento (popup OU sucesso)
+                                # Usamos .first para pegar o primeiro que aparecer
+                                combined_locator.first.wait_for(state='visible', timeout=remaining_timeout)
+                                
+                                print("     - Evento pós-salvamento detectado. Verificando qual...")
+
+                                # 6. Verificamos o que apareceu (sem espera)
+                                if success_locator.is_visible():
+                                    # CENÁRIO B: SUCESSO!
+                                    print("     - Notificação de sucesso detectada. Saindo do loop.")
+                                    break # Sai do loop 'while True'
+
+                                elif popup_locator.is_visible():
+                                    # CENÁRIO A: POPUP! (Pode ser o 1º, 2º, 3º...)
+                                    try:
+                                        # Tenta ler a mensagem para log
+                                        msg_popup = page.locator("#popup_message").text_content(timeout=500)
+                                        print(f"     - Popup de confirmação detectado: '{msg_popup[:50]}...'. Clicando...")
+                                    except Exception:
+                                        print("     - Popup de confirmação (sem msg) detectado. Clicando...")
+                                    
+                                    popup_locator.click()
+                                    
+                                    # 7. CRÍTICO: Esperar o popup desaparecer ANTES de continuar o loop
+                                    print("     - Aguardando popup desaparecer...")
+                                    popup_locator.wait_for(state='hidden', timeout=5000) # Espera o popup atual sumir
+                                    print("     - Popup tratado. Voltando a aguardar (próximo popup ou sucesso)...")
+                                    # O 'while True' continua
+                                
+                                else:
+                                    # Segurança: se o wait_for() retornar mas nenhum for visível
+                                    # (improvável, mas bom ter)
+                                    print("     - [AVISO] Wait_for retornou, mas nenhum localizador visível. Tentando novamente...")
+                                    page.wait_for_timeout(250) # Pequena pausa
+
+                            # 8. Se chegamos aqui (fora do loop), o sucesso foi alcançado
                             duracao = round(time.time() - inicio_salvar, 2)
                             adicionar_evento(log, "Salvar", "sucesso", "Confirmação", "", duracao)
                             print(f"[SALVO] Processo {numero} salvo com sucesso ({duracao}s)")
 
-                        except PlaywrightTimeoutError as e_timeout_success:
+                        except PlaywrightTimeoutError as e_timeout_combined:
+                            # Se o timeout total estourar
                             duracao = round(time.time() - inicio_salvar, 2)
-                            print(f"   - DEBUG: Timeout ({str(e_timeout_success).splitlines()[0]}) ao esperar msg de sucesso.")
-                            mensagem = f"Falha Salvar: Notificação sucesso não encontrada ({duracao}s)."
+                            print(f"     - DEBUG: Timeout ({str(e_timeout_combined).splitlines()[0]}) ao esperar popup OU sucesso.")
+                            mensagem = f"Falha Salvar: Nem popup nem notificação de sucesso encontrados ({duracao}s)."
                             adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
                             print(f"[ERRO] {mensagem} no proc {numero}")
-                            if page.is_closed(): raise Exception("Página fechou durante espera.")
-                            else: raise Exception(mensagem)
-                        except Exception as e_success:
+                            if page.is_closed(): 
+                                raise Exception("Página fechou durante espera.")
+                            else: 
+                                raise Exception(mensagem)
+
+                        except Exception as e_combined:
+                            # Tratamento de outros erros no loop
                             duracao = round(time.time() - inicio_salvar, 2)
-                            print(f"   - DEBUG: Erro msg sucesso: {type(e_success).__name__} - {e_success}")
-                            mensagem = f"Falha Salvar: Erro ao verificar notificação: {e_success}"
+                            print(f"     - DEBUG: Erro inesperado no loop: {type(e_combined).__name__} - {e_combined}")
+                            mensagem = f"Falha Salvar: Erro ao verificar notificação/popup: {e_combined}"
                             adicionar_evento(log, "Salvar", "erro", "Confirmação", mensagem, duracao)
                             print(f"[ERRO] {mensagem} no proc {numero}")
-                            if page.is_closed(): raise Exception("Página fechou durante espera.")
-                            else: raise Exception(mensagem)
+                            if page.is_closed(): 
+                                raise Exception("Página fechou durante espera.")
+                            else: 
+                                raise Exception(mensagem)
+                        
+                        # --- FIM DA MODIFICAÇÃO ---
+
                     else:
                         msg_botao = "Botão 'Salvar' não encontrado/visível/habilitado"
                         adicionar_evento(log, "Salvar", "erro", "Confirmação", msg_botao, 0)
@@ -1518,7 +1712,7 @@ def main():
             except Exception as e_processo:
                 print(f"[ERRO INESPERADO] proc {numero} (Linha {excel_row_num}): {e_processo}")
                 if not any(err.get("etapa") == "Processamento Geral" for err in log.get("Erros", [])):
-                     adicionar_evento(log, "Processamento Geral", "erro", "Execução", str(e_processo), 0)
+                       adicionar_evento(log, "Processamento Geral", "erro", "Execução", str(e_processo), 0)
 
                 error_msg_lower = str(e_processo).lower()
                 if "target page" in error_msg_lower or "browser has been closed" in error_msg_lower or \
@@ -1529,19 +1723,19 @@ def main():
                     break
                 else:
                     try:
-                         print("   - Tentando voltar para busca...");
-                         if page and not page.is_closed():
-                              page.goto("https://mdradvocacia.novajus.com.br/processos/processos/search", wait_until="load", timeout=30000)
-                              print("   - Recuperação OK.")
-                         else:
-                              print("[ERRO GRAVE] Página fechada na recuperação. Encerrando.")
-                              if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
-                              break
+                        print("     - Tentando voltar para busca...");
+                        if page and not page.is_closed():
+                             page.goto("https://mdradvocacia.novajus.com.br/processos/processos/search", wait_until="load", timeout=30000)
+                             print("     - Recuperação OK.")
+                        else:
+                            print("[ERRO GRAVE] Página fechada na recuperação. Encerrando.")
+                            if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                            break
                     except Exception as e_nav:
-                         print(f"[ERRO GRAVE] Falha ao voltar para busca: {e_nav}. Encerrando.")
-                         adicionar_evento(log, "Recuperação", "erro", "Navegação", f"Falha: {e_nav}", 0)
-                         if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
-                         break
+                        print(f"[ERRO GRAVE] Falha ao voltar para busca: {e_nav}. Encerrando.")
+                        adicionar_evento(log, "Recuperação", "erro", "Navegação", f"Falha: {e_nav}", 0)
+                        if not any(l.get("Processo") == numero and l.get("Linha Excel") == excel_row_num for l in logs_processos): logs_processos.append(log)
+                        break
 
             # <<< Finally alinhado com o try principal do processo >>>
             finally:
@@ -1561,27 +1755,26 @@ def main():
 
     # Finally GERAL
     finally:
-        # <<< CORREÇÃO DE SINTAXE APLICADA AQUI E NAS LINHAS SEGUINTES >>>
         if page and not page.is_closed():
             try:
                 page.close()
                 print("[INFO] Página fechada.")
             except Exception as e:
-                print(f"[AVISO] Erro ao fechar página: {e}") # Indentado
+                print(f"[AVISO] Erro ao fechar página: {e}") 
 
         if context:
             try:
                 context.close()
                 print("[INFO] Contexto fechado.")
             except Exception as e:
-                print(f"[AVISO] Erro ao fechar contexto: {e}") # Indentado
+                print(f"[AVISO] Erro ao fechar contexto: {e}") 
 
         if browser and browser.is_connected():
             try:
                 browser.close()
                 print("[INFO] Navegador fechado.")
             except Exception as e:
-                print(f"[AVISO] Erro ao fechar navegador: {e}") # Indentado
+                print(f"[AVISO] Erro ao fechar navegador: {e}") 
         elif browser:
             print("[INFO] Navegador já estava desconectado.")
         else:
@@ -1592,12 +1785,11 @@ def main():
                 playwright_context.stop()
                 print("[INFO] Playwright parado.")
             except Exception as e:
-                print(f"[AVISO] Erro ao parar Playwright: {e}") # Indentado
-        # <<< FIM DA CORREÇÃO DE SINTAXE >>>
+                print(f"[AVISO] Erro ao parar Playwright: {e}") 
 
         # Salvar logs
         print("\n[INFO] Finalizando script. Salvando log...")
-        if 'salvar_log_execucao' in globals(): salvar_log_execucao(logs_processos)
+        if 'salvar_log_execucao' in globals(): salvar_log_execucao(logs_processos, df_full)
         else: print("[ERRO CRÍTICO] Função 'salvar_log_execucao' não definida!")
         tempo_total = time.time() - start_time
         print(f"\n[TEMPO] Tempo total: {tempo_total:.2f} segundos.")

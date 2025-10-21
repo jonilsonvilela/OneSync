@@ -43,3 +43,4 @@ Thumbs.db
 # Podemos optar por ignorar os logs gerados para não poluir o repositório.
 # Se você QUISER salvar os logs no Git, remova a linha abaixo.
 /data/logs_execucao/
+/data/arquivo/relatorio_sumarizados/

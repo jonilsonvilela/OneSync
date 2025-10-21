@@ -1,0 +1,5 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0002915-59.2013.8.14.0015;Falha;0.54;Processamento Geral;"Falha Acesso: Page.goto: net::ERR_ABORTED at https://mdradvocacia.novajus.com.br/processos/processos/search
+Call log:
+  - navigating to ""https://mdradvocacia.novajus.com.br/processos/processos/search"", waiting until ""load""
+"

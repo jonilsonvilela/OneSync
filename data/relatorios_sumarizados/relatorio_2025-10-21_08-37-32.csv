@@ -1,0 +1,6 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0800886-97.2023.8.20.5119;Falha;86.89;Salvar;"Falha Salvar: Erro ao verificar notificação: Locator.wait_for: Target page, context or browser has been closed
+Call log:
+  - waiting for locator(""div.top-message-body.sucesso div.message-content"").filter(has_text=re.compile(r""alterado com sucesso\."", re.IGNORECASE)) to be visible
+    3 × locator resolved to hidden <div class=""message-content"">…</div>
+"

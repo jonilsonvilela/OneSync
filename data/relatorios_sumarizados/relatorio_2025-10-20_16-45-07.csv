@@ -1,0 +1,5 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;87.58;Salvar;"Falha Salvar: Erro ao verificar notificação: Locator.wait_for: Target page, context or browser has been closed
+Call log:
+  - waiting for locator(""div.top-message-body.sucesso div.message-content:has-text(\""alterado com sucesso\"")"") to be visible
+"

@@ -1,0 +1,26 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0002915-59.2013.8.14.0015;Sucesso;50.51;;
+0000005-96.2004.8.14.0009;Sucesso;48.85;;
+0842604-82.2019.8.14.0301;Falha;58.85;Salvar;"Erro crítico: Locator.click: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator(""button[name=\""ButtonSave\""]"")
+    - locator resolved to <button value=""0"" type=""submit"" name=""ButtonSave"">Salvar e fechar</button>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - performing click action
+    - click action done
+    - waiting for scheduled navigations to finish
+"
+0801532-33.2020.8.14.0123;Sucesso;48.53;;
+0000181-71.2003.8.20.0128;Sucesso;50.34;;
+0000413-42.1996.8.20.0124;Sucesso;51.82;;
+0830812-97.2020.8.14.0301;Sucesso;56.23;;
+0805277-49.2023.8.14.0015;Sucesso;56.11;;
+0814378-88.2024.8.20.5001;Sucesso;54.48;;
+0800507-65.2025.8.14.0072;Sucesso;53.66;;
+0002033-18.1998.8.14.0006;Sucesso;57.56;;
+0000013-75.1999.8.14.0096;Sucesso;60.09;;
+0135677-16.2013.8.20.0001;Sucesso;62.63;;

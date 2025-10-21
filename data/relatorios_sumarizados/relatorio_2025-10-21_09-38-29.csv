@@ -1,0 +1,50 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;79.63;Salvar;"Erro crítico: Locator.click: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator(""button[name=\""ButtonSave\""]"")
+    - locator resolved to <button value=""0"" type=""submit"" name=""ButtonSave"">Salvar e fechar</button>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - performing click action
+    - click action done
+    - waiting for scheduled navigations to finish
+"
+0662042-84.2019.8.04.0001;Falha;75.07;Salvar;"Erro crítico: Locator.click: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator(""button[name=\""ButtonSave\""]"")
+    - locator resolved to <button value=""0"" type=""submit"" name=""ButtonSave"">Salvar e fechar</button>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - performing click action
+    - click action done
+    - waiting for scheduled navigations to finish
+"
+0800886-97.2023.8.20.5119;Sucesso;60.11;;
+0800586-05.2024.8.14.0064;Sucesso;61.53;;
+7002051-60.2025.8.22.0013;Falha;68.62;Salvar;"Erro crítico: Locator.click: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator(""button[name=\""ButtonSave\""]"")
+    - locator resolved to <button value=""0"" type=""submit"" name=""ButtonSave"">Salvar e fechar</button>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - performing click action
+    - click action done
+    - waiting for scheduled navigations to finish
+"
+0800330-30.2020.8.14.0023;Sucesso;60.76;;
+0002915-59.2013.8.14.0015;Sucesso;53.02;;
+0000005-96.2004.8.14.0009;Sucesso;46.65;;
+0842604-82.2019.8.14.0301;Falha;81.14;Salvar;Falha Salvar: Nem popup nem notificação de sucesso encontrados (36.62s).
+0801532-33.2020.8.14.0123;Falha;51.99;Salvar;"Falha Salvar: Erro ao verificar notificação/popup: Locator.wait_for: Target page, context or browser has been closed
+Call log:
+  - waiting for locator(""input#popup_ok"").or_(locator(""div.top-message-body.sucesso div.message-content"").filter(has_text=re.compile(r""alterado com sucesso\."", re.IGNORECASE))).first to be visible
+"

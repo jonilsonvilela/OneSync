@@ -1,0 +1,7 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0842604-82.2019.8.14.0301;Falha;87.86;Salvar;Falha Salvar: Nem popup nem notificação de sucesso encontrados (38.87s).
+0801532-33.2020.8.14.0123;Falha;81.44;Salvar;Falha Salvar: Nem popup nem notificação de sucesso encontrados (36.65s).
+0000181-71.2003.8.20.0128;Falha;52.73;Salvar;"Falha Salvar: Erro ao verificar notificação/popup: Locator.wait_for: Target page, context or browser has been closed
+Call log:
+  - waiting for locator(""input#popup_ok"").or_(locator(""div.top-message-body.sucesso div.message-content"").filter(has_text=re.compile(r""alterado com sucesso\."", re.IGNORECASE))).first to be visible
+"

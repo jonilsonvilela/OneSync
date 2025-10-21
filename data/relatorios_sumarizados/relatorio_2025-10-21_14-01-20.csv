@@ -1,0 +1,9 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Sucesso;56.31;;
+0662042-84.2019.8.04.0001;Sucesso;50.58;;
+0800886-97.2023.8.20.5119;Sucesso;52.09;;
+0800586-05.2024.8.14.0064;Sucesso;49.35;;
+7002051-60.2025.8.22.0013;Sucesso;50.05;;
+0800330-30.2020.8.14.0023;Sucesso;52.71;;
+0002915-59.2013.8.14.0015;Sucesso;53.51;;
+0000005-96.2004.8.14.0009;Falha;45.72;Negociação Honorário;Falha ao preencher 'Lote 3 - Amapá e Pará / Autor / Hon - 0000001/010'

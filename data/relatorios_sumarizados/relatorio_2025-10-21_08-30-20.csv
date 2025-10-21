@@ -1,0 +1,6 @@
+﻿Processo;Status;Duracao_Total_s;Etapa_Falha;Mensagem_Erro
+0022045-56.2006.8.20.0001;Falha;97.59;Salvar;Falha Salvar: Notificação sucesso não encontrada (49.81s).
+0662042-84.2019.8.04.0001;Falha;12.57;Processamento Geral;"Falha Acesso: Page.wait_for_selector: Target page, context or browser has been closed
+Call log:
+  - waiting for locator(""button[name=\""ButtonSave\""]"") to be visible
+"
