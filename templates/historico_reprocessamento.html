@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">🔁 Histórico de Arquivos de Reprocessamento (XLSX)</h1>
+
+{% if arquivos %}
+  <div class="space-y-3">
+    {% for arquivo in arquivos %}
+      <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm transition-all duration-200 hover:shadow-lg hover:border-l-4 hover:border-yellow-500">
+        <span class="text-base font-medium text-gray-800">{{ arquivo.exibicao }}</span>
+        <div class="space-x-3">
+            <a href="{{ url_for('baixar_reprocessamento_xlsx', nome=arquivo.original) }}" class="bg-yellow-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-yellow-700">Baixar XLSX</a>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+    <div class="text-center bg-white p-10 rounded-lg shadow-md">
+        <h2 class="text-xl font-bold text-gray-700">Nenhum arquivo de reprocessamento encontrado.</h2>
+        <p class="mt-2 text-gray-500">
+            Esta área armazena os arquivos .xlsx gerados automaticamente contendo apenas as linhas que falharam nas execuções anteriores.
+        </p>
+    </div>
+{% endif %}
+{% endblock %}

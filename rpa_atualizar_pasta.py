@@ -67,10 +67,12 @@ MAPA_CENTRO_CUSTO = {
     "MDR Advocacia / Área Administrativa / Área Operacional / Bradesco / Autor": 46,
 }
 
-def iniciar_log_processo(numero_processo: str):
+def iniciar_log_processo(numero: str) -> dict:
+    """Inicia um dicionário de log para um processo."""
     return {
-        "Processo": numero_processo,
-        "Status Geral": "Em andamento",
+        "Processo": numero,
+        "Linha Excel": None, # Será preenchido no main
+        "Status Geral": "Iniciado", # Será atualizado para Sucesso/Falha no final
         "Erros": [],
         "Sucessos": [],
         "Duracao por etapa (s)": {}
@@ -1405,47 +1407,42 @@ def gerar_arquivo_reprocessamento(lista_logs: list, df_original: pd.DataFrame, t
     except Exception as e:
         print(f"[ERRO] Falha ao gerar arquivo de reprocessamento: {e}")
 
-def salvar_log_execucao(lista_logs: list, df_original: pd.DataFrame):
+def salvar_log_execucao(lista_logs: list, df_original: pd.DataFrame, pasta_base: Path) -> dict:
     """
-    Salva o log detalhado em JSON, chama o relatório sumarizado
-    e gera o arquivo de reprocessamento.
-    
-    Argumentos:
-        lista_logs (list): A lista de logs da execução.
-        df_original (pd.DataFrame): O DataFrame completo do 'entrada.xlsx'.
+    Salva o log JSON, chama os relatórios e retorna um dicionário com todos os caminhos.
+    AGORA RECEBE pasta_base CORRETAMENTE.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    pasta_logs = Path(__file__).resolve().parent / "data" / "logs_execucao"
+    pasta_logs = pasta_base / "data" / "logs_execucao"
     pasta_logs.mkdir(parents=True, exist_ok=True)
     caminho_json = pasta_logs / f"log_{timestamp}.json"
 
-    # Atualiza status geral com base na regra de negócio final
-    # (Sua lógica original está perfeita)
+    # Atualiza status geral
     for log in lista_logs:
         sucesso_ao_salvar = any(
             evento.get("etapa") == "Salvar" 
             for evento in log.get("Sucessos", [])
         )
+        log["Status Geral"] = "Sucesso" if sucesso_ao_salvar else "Falha"
 
-        if sucesso_ao_salvar:
-            log["Status Geral"] = "Sucesso"
-        else:
-            log["Status Geral"] = "Falha"
-
-    # Salva o log detalhado em JSON, agora com o Status Geral correto
+    # Salva o log detalhado em JSON
     with open(caminho_json, "w", encoding="utf-8") as f:
         json.dump(lista_logs, f, ensure_ascii=False, indent=2)
-    print(f"[LOG] Log detalhado da execução salvo em: {caminho_json}")
+    print(f"[LOG] Log detalhado da execução salvo em: {caminho_json}", flush=True)
 
-    # Chama a função para gerar o relatório sumarizado em CSV
-    # (Esta função já deve estar atualizada conforme o Passo 1)
-    gerar_relatorio_sumarizado(lista_logs, timestamp)
+    # Gera relatórios e coleta os caminhos, passando pasta_base
+    caminho_csv = gerar_relatorio_sumarizado(lista_logs, timestamp, pasta_base)
     
-    # --- INCLUSÃO (Passo 3) ---
-    # Chama a nova função para gerar o arquivo Excel de reprocessamento
-    # (Esta função já deve estar definida conforme o Passo 2)
-    gerar_arquivo_reprocessamento(lista_logs, df_original, timestamp)
-    # --- FIM DA INCLUSÃO ---
+    # --- CORREÇÃO: Passar pasta_base para gerar_arquivo_reprocessamento ---
+    caminho_xlsx = gerar_arquivo_reprocessamento(lista_logs, df_original, timestamp, pasta_base)
+    # --- FIM DA CORREÇÃO ---
+    
+    # Retorna todos os caminhos gerados
+    return {
+        "json_log": str(caminho_json),
+        "csv_report": str(caminho_csv) if caminho_csv else None,
+        "xlsx_reprocess": str(caminho_xlsx) if caminho_xlsx else None,
+    }
 
 def main():
     start_time = time.time()
@@ -1789,10 +1786,16 @@ def main():
 
         # Salvar logs
         print("\n[INFO] Finalizando script. Salvando log...")
-        if 'salvar_log_execucao' in globals(): salvar_log_execucao(logs_processos, df_full)
-        else: print("[ERRO CRÍTICO] Função 'salvar_log_execucao' não definida!")
+        if 'salvar_log_execucao' in globals(): 
+            final_file_paths = salvar_log_execucao(logs_processos, df_full, BASE_DIR)
+            print(f"FINAL_PATHS:{json.dumps(final_file_paths)}", flush=True)
+
+        else: 
+            print("[ERRO CRÍTICO] Função 'salvar_log_execucao' não definida!")
         tempo_total = time.time() - start_time
-        print(f"\n[TEMPO] Tempo total: {tempo_total:.2f} segundos.")
+        print(f"\n[TEMPO] Tempo total: {tempo_total:.2f} segundos.", flush=True)
+        print("[FIM] FIM DO SCRIPT RPA", flush=True)
+        
 
 if __name__ == "__main__":
     # Configuração de encoding (Mantido)

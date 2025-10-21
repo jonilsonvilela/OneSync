@@ -2,6 +2,12 @@
 
 {% block content %}
 <h1 class="text-2xl font-semibold mb-4">🚀 Executando Atualização</h1>
+<p class="text-gray-500 mb-6">
+  Lote: 
+  <span class="font-mono text-indigo-600">{{ batch_info.start or 'Início' }}</span> 
+  até 
+  <span class="font-mono text-indigo-600">{{ batch_info.end or 'Fim' }}</span>
+</p>
 
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="bg-white p-4 rounded-lg shadow text-center transition-all hover:shadow-lg hover:scale-105">
@@ -18,37 +24,54 @@
     </div>
     <div class="bg-white p-4 rounded-lg shadow text-center transition-all hover:shadow-lg hover:scale-105">
         <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">RESTANTES</h3>
-        <p id="restantes-count" class="text-3xl font-bold text-indigo-600 mt-2">0</p>
+        <p id="restantes-count" class="text-3xl font-bold text-gray-500 mt-2">0</p>
     </div>
 </div>
-<div class="flex items-center space-x-4 mb-4">
-  <svg id="spinner" class="animate-spin h-6 w-6 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-  </svg>
-  <span id="status-text" class="text-indigo-700 font-medium">Aguarde... script em execução</span>
+
+<div class="bg-gray-900 text-white font-mono p-4 rounded-lg shadow-inner h-96 overflow-y-auto" id="log-output">
+  <div class="flex items-center space-x-2" id="status-running">
+    <svg id="spinner" class="animate-spin h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+    <span id="status-text">Conectando ao servidor e iniciando o robô...</span>
+  </div>
 </div>
 
-<div class="bg-black text-green-400 p-4 rounded-lg h-[50vh] overflow-auto text-sm font-mono shadow" id="log">
-  <p>Iniciando log ao vivo...</p>
+<div id="links-download" class="hidden mt-6 space-y-3">
+    <h2 class="text-xl font-semibold text-gray-700">Resultados da Execução</h2>
+    
+    <a id="link-log" 
+       class="block w-full text-center bg-indigo-600 text-white px-4 py-3 rounded-md text-sm font-medium hover:bg-indigo-700 transition-all duration-200 shadow-sm hover:shadow-md opacity-50 cursor-not-allowed"
+       aria-disabled="true" onclick="if (this.ariaDisabled === 'true') event.preventDefault()">
+        💾 Baixar Log Detalhado (JSON)
+    </a>
+    
+    <a id="link-report"
+       class="block w-full text-center bg-green-600 text-white px-4 py-3 rounded-md text-sm font-medium hover:bg-green-700 transition-all duration-200 shadow-sm hover:shadow-md opacity-50 cursor-not-allowed"
+       aria-disabled="true" onclick="if (this.ariaDisabled === 'true') event.preventDefault()">
+        📄 Baixar Relatório Sumarizado (CSV)
+    </a>
+    
+    <a id="link-reprocess"
+       class="block w-full text-center bg-yellow-500 text-white px-4 py-3 rounded-md text-sm font-medium hover:bg-yellow-600 transition-all duration-200 shadow-sm hover:shadow-md opacity-50 cursor-not-allowed"
+       aria-disabled="true" onclick="if (this.ariaDisabled === 'true') event.preventDefault()">
+        🔁 Baixar Arquivo de Reprocessamento (Falhas .XLSX)
+    </a>
 </div>
-
-<div id="botoes-finais" class="mt-6 hidden">
-  <a href="{{ url_for('index') }}" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-800 transition">
-    🔙 Voltar ao Dashboard
-  </a>
-  <a href="{{ url_for('resultado') }}" class="ml-4 bg-blue-700 text-white px-4 py-2 rounded hover:bg-blue-800 transition">
-    📄 Ver Último Resultado
-  </a>
-</div>
-
 <script>
-  const logDiv = document.getElementById('log');
-  const botoesFinais = document.getElementById('botoes-finais');
+  const logDiv = document.getElementById('log-output');
   const spinner = document.getElementById('spinner');
   const statusText = document.getElementById('status-text');
   
-  // Elementos do painel de progresso
+  // <--- MODIFICAÇÃO: IDs dos links de download ---
+  const downloadLinksDiv = document.getElementById('links-download');
+  const linkLog = document.getElementById('link-log');
+  const linkReport = document.getElementById('link-report');
+  const linkReprocess = document.getElementById('link-reprocess');
+  // --- FIM DA MODIFICAÇÃO ---
+
+  // Contadores
   const totalEl = document.getElementById('total-count');
   const concluidosEl = document.getElementById('concluidos-count');
   const falhadosEl = document.getElementById('falhados-count');
@@ -64,14 +87,49 @@
     if (data.type === 'log') {
         const novaLinha = document.createElement('div');
         novaLinha.textContent = data.message;
+        
+        // <--- MODIFICAÇÃO: Adiciona cores ao log ---
+        if (data.message.includes('[ERRO') || data.message.includes('[CRÍTICO]')) {
+            novaLinha.classList.add('text-red-400');
+        } else if (data.message.includes('[SALVO]')) {
+            novaLinha.classList.add('text-green-400');
+        } else if (data.message.includes('[AVISO]')) {
+            novaLinha.classList.add('text-yellow-400');
+        } else if (data.message.includes('[INFO] Processamento linha')) {
+            novaLinha.classList.add('text-blue-300', 'pt-2', 'border-t', 'border-gray-700', 'mt-1');
+        } else if (data.message.includes('[REPROCESSAR]')) {
+            novaLinha.classList.add('text-yellow-300', 'font-bold');
+        }
+        // --- FIM DA MODIFICAÇÃO ---
+        
         logDiv.appendChild(novaLinha);
         logDiv.scrollTop = logDiv.scrollHeight;
+        
     } else if (data.type === 'progress') {
         totalEl.textContent = data.total;
         concluidosEl.textContent = data.concluidos;
         falhadosEl.textContent = data.falhados;
         restantesEl.textContent = data.restantes;
+        
+    // <--- MODIFICAÇÃO: Ouve a mensagem 'final_paths' ---
+    } else if (data.type === 'final_paths') {
+        if (data.paths.json_log) {
+            linkLog.href = data.paths.json_log; // Define o link
+            linkLog.classList.remove('opacity-50', 'cursor-not-allowed');
+            linkLog.ariaDisabled = 'false';
+        }
+        if (data.paths.csv_report) {
+            linkReport.href = data.paths.csv_report; // Define o link
+            linkReport.classList.remove('opacity-50', 'cursor-not-allowed');
+            linkReport.ariaDisabled = 'false';
+        }
+        if (data.paths.xlsx_reprocess) {
+            linkReprocess.href = data.paths.xlsx_reprocess; // Define o link
+            linkReprocess.classList.remove('opacity-50', 'cursor-not-allowed');
+            linkReprocess.ariaDisabled = 'false';
+        }
     }
+    // --- FIM DA MODIFICAÇÃO ---
   };
 
   eventSource.onerror = function() {
@@ -79,16 +137,22 @@
 
     const fim = document.createElement('div');
     fim.textContent = '✅ Execução finalizada. Conexão com o servidor encerrada.';
-    fim.classList.add('text-yellow-400', 'mt-4');
+    fim.classList.add('text-yellow-400', 'mt-4', 'font-bold'); // <--- MODIFICAÇÃO: 'font-bold'
     logDiv.appendChild(fim);
 
     // Esconde o spinner e atualiza o texto de status
     spinner.classList.add('hidden');
-    statusText.textContent = "Execução concluída!";
-    statusText.classList.remove('text-indigo-700');
-    statusText.classList.add('text-green-700');
-
-    botoesFinais.classList.remove('hidden');
+    statusText.textContent = 'Execução Finalizada.';
+    // <--- MODIFICAÇÃO: Mudança de cor no status ---
+    statusText.parentElement.classList.remove('text-green-400'); 
+    statusText.parentElement.classList.add('text-yellow-400');
+    // --- FIM DA MODIFICAÇÃO ---
+    
+    // <--- MODIFICAÇÃO: Mostra os links de download ---
+    downloadLinksDiv.classList.remove('hidden');
+    // --- FIM DA MODIFICAÇÃO ---
+    
+    logDiv.scrollTop = logDiv.scrollHeight;
   };
 </script>
 {% endblock %}
